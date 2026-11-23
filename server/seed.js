@@ -118,7 +118,8 @@ export function seedDemo() {
     const upd = db.prepare('UPDATE cards SET balance = ? WHERE id = ?');
     for (const c of cards) upd.run(c.balance, c.id);
 
-    // 데모용 일반 사용자(로그인 불가) & 관리자
+    // 데모용 일반 사용자(로그인 불가) & 관리자 — 공개 배포 시에는 SEED_DEMO_USERS=false 로 생성하지 않음
+    if (process.env.SEED_DEMO_USERS === 'false') return;
     db.prepare("INSERT INTO users (username, password_hash, name, email, role) VALUES ('manager01', ?, '운영관리자', 'manager01@example.com', 'ADMIN')")
       .run(hashPassword('manager1234'));
     db.prepare("INSERT INTO users (username, password_hash, name, email, role) VALUES ('user01', ?, '일반사용자', 'user01@example.com', 'USER')")

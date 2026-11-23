@@ -1,0 +1,24 @@
+# Render 원클릭 배포 설정 (https://render.com)
+services:
+  - type: web
+    name: freed-platform-erp
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22.20.0"
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        generateValue: true   # 무작위 생성 → Render 대시보드 Environment 탭에서 확인
+      - key: SEED_DEMO
+        value: "true"
+      - key: SEED_DEMO_USERS
+        value: "false"        # 알려진 비밀번호의 데모 계정은 공개 서버에 만들지 않음
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: TRUST_PROXY
+        value: "true"

@@ -2,6 +2,18 @@
 
 선불카드 플랫폼 운영을 위한 **관리자 전용** ERP입니다.
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/heijungKim/freed_platform)
+
+## 인터넷 주소로 배포하기 (Render, 무료)
+
+1. 위 **Deploy to Render** 버튼 클릭 → GitHub 계정으로 Render 로그인
+2. **Deploy Blueprint** 클릭 → 3~5분 후 `https://freed-platform-erp-xxxx.onrender.com` 형태의 주소 생성
+3. Render 대시보드 → 서비스 → **Environment** 탭에서 `ADMIN_PASSWORD` 값 확인 → 아이디 `admin` 으로 로그인
+
+> 공개 배포 시 관리자 비밀번호는 무작위로 생성되며, 데모 계정(manager01, user01)은 만들어지지 않습니다.
+> 무료 플랜은 15분간 접속이 없으면 잠들고(첫 접속 시 30초~1분 대기), 재시작·재배포 시 데이터가 초기화됩니다.
+> 데이터를 계속 보관하려면 유료 플랜에서 Persistent Disk를 붙이고 `DB_PATH`를 디스크 경로로 지정하세요.
+
 | 메뉴 | 기능 |
 |---|---|
 | 법인 | 고객 법인 등록·수정·삭제, 사업자번호 중복 검사, 법인별 카드 수/잔액 |
@@ -58,6 +70,7 @@ npm run seed    # DB 초기화 후 데모 데이터 재생성
 | `DB_PATH` | `data/erp.db` | SQLite 파일 경로 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `admin1234` | 최초 실행 시 만들 관리자 계정 |
 | `SEED_DEMO` | `true` | DB가 비어있을 때 데모 데이터 생성 (`false`로 끄기) |
+| `SEED_DEMO_USERS` | `true` | 데모 계정(manager01, user01) 생성 여부 — 공개 배포 시 `false` |
 | `COOKIE_SECURE` | `false` | HTTPS 운영 시 `true` |
 | `TRUST_PROXY` | `false` | 리버스 프록시 뒤에서 운영 시 `true` |
 

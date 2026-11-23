@@ -24,6 +24,7 @@ export function createApp() {
     next();
   });
 
+  app.get('/api/health', (req, res) => res.json({ ok: true }));
   app.use('/api/auth', authRoutes);
   // 이하 모든 API는 관리자 로그인 필요
   app.use('/api', requireAdmin);
