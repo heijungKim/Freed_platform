@@ -1,0 +1,18 @@
+{
+  "name": "Freed Platform ERP",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "containerEnv": {
+    "SEED_DEMO_USERS": "false",
+    "COOKIE_SECURE": "true",
+    "TRUST_PROXY": "true"
+  },
+  "postCreateCommand": "npm ci && npm run build",
+  "postAttachCommand": "bash scripts/codespace-start.sh",
+  "forwardPorts": [4000],
+  "portsAttributes": {
+    "4000": { "label": "Freed ERP", "onAutoForward": "openBrowser" }
+  }
+}

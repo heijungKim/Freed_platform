@@ -2,7 +2,17 @@
 
 선불카드 플랫폼 운영을 위한 **관리자 전용** ERP입니다.
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/heijungKim/freed_platform?quickstart=1)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/heijungKim/freed_platform)
+
+## GitHub 임시 링크로 바로 실행 (Codespaces)
+
+1. **Open in GitHub Codespaces** 버튼 클릭 → **Create codespace**
+2. 2~3분 후 자동으로 빌드·실행되고, 터미널에 접속 링크(`https://<이름>-4000.app.github.dev`)와 `admin` 비밀번호가 표시됩니다.
+3. 해당 링크는 공개로 전환되어 다른 사람도 접속할 수 있습니다. Codespace를 중지하면 링크도 닫힙니다.
+
+> 비밀번호는 Codespace 안의 `data/admin-password.txt`에도 저장됩니다. 공개 링크이므로 데모 계정은 생성되지 않습니다.
+> Codespace는 30분 동안 사용이 없으면 자동으로 중지됩니다(GitHub 설정에서 변경 가능).
 
 ## 인터넷 주소로 배포하기 (Render, 무료)
 
