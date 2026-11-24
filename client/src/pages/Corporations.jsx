@@ -137,6 +137,7 @@ function CorporationCards({ corporation }) {
         empty="발급된 카드가 없습니다."
         columns={[
           { key: 'card_no', label: '카드번호', filter: true, render: (r) => <span className="mono">{fmtCard(r.card_no)}</span> },
+          { key: 'issuer_name', label: '선불사업자', filter: true, render: (r) => r.issuer_name || '-' },
           { key: 'holder_name', label: '사용자', filter: true },
           { key: 'balance', label: '잔액', align: 'right', filter: true, render: (r) => won(r.balance) },
           { key: 'limit_amount', label: '충전 한도', align: 'right', render: (r) => (r.limit_amount ? won(r.limit_amount) : '무제한') },

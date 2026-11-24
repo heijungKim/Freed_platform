@@ -4,9 +4,9 @@
  */
 import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
-import { SCHEMA } from '../../../server/schema.js';
+import { SCHEMA, migrate } from '../../../server/schema.js';
 
-const STORAGE_KEY = 'freed-erp-demo-db-v2';
+const STORAGE_KEY = 'freed-erp-demo-db-v3';
 let raw = null; // sql.js Database
 let dirty = false;
 
@@ -88,5 +88,6 @@ export async function initDb() {
   }
   raw.exec('PRAGMA foreign_keys = ON;');
   raw.exec(SCHEMA);
+  migrate(db);
   return !saved;
 }

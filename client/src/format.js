@@ -15,11 +15,13 @@ export const LABELS = {
   txType: { CHARGE: '충전', PAYMENT: '결제', REFUND: '환불' },
   txStatus: { APPROVED: '승인', CANCELLED: '취소', FAILED: '실패' },
   role: { SUPER_ADMIN: '최고 관리자', ADMIN: '관리자', USER: '일반 사용자' },
+  protection: { TRUST: '신탁', GUARANTEE: '지급보증보험', DEPOSIT: '예치' },
 };
 
 const TONE = {
   ACTIVE: 'green', APPROVED: 'green', INACTIVE: 'gray', SUSPENDED: 'amber', LOST: 'red', EXPIRED: 'gray',
   CANCELLED: 'red', FAILED: 'red', CHARGE: 'blue', PAYMENT: 'violet', REFUND: 'amber',
   SUPER_ADMIN: 'violet', ADMIN: 'blue', USER: 'gray',
+  TRUST: 'blue', GUARANTEE: 'violet', DEPOSIT: 'amber',
 };
 export const toneOf = (v) => TONE[v] || 'gray';

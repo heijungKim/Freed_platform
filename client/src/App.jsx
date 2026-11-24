@@ -10,18 +10,35 @@ import Transactions from './pages/Transactions.jsx';
 import Cards from './pages/Cards.jsx';
 import Stats from './pages/Stats.jsx';
 import Users from './pages/Users.jsx';
+import Issuers from './pages/Issuers.jsx';
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
 
-const MENU = [
-  { to: '/corporations', label: '법인', icon: '🏢', element: <Corporations /> },
-  { to: '/pgs', label: 'PG', icon: '🔌', element: <Pgs /> },
-  { to: '/transactions', label: '거래내역', icon: '🧾', element: <Transactions /> },
-  { to: '/cards', label: '선불카드 관리', icon: '💳', element: <Cards /> },
-  { to: '/stats', label: '집계', icon: '📊', element: <Stats /> },
-  { to: '/users', label: '사용자 관리', icon: '👤', element: <Users /> },
+/** 사이드바 메뉴: 집계(전체 현황) → 법인 / PG / 선불사업 → 사용자 관리(시스템) */
+const MENU_GROUPS = [
+  { items: [{ to: '/stats', label: '집계', icon: '📊', element: <Stats /> }] },
+  {
+    title: '법인',
+    items: [
+      { to: '/corporations', label: '법인 관리', icon: '🏢', element: <Corporations /> },
+      { to: '/transactions', label: '거래내역', icon: '🧾', element: <Transactions /> },
+    ],
+  },
+  {
+    title: 'PG',
+    items: [{ to: '/pgs', label: 'PG 관리', icon: '🔌', element: <Pgs /> }],
+  },
+  {
+    title: '선불사업',
+    items: [
+      { to: '/issuers', label: '선불사업자', icon: '🏦', element: <Issuers /> },
+      { to: '/cards', label: '선불카드 관리', icon: '💳', element: <Cards /> },
+    ],
+  },
+  { title: '시스템', items: [{ to: '/users', label: '사용자 관리', icon: '👤', element: <Users /> }] },
 ];
+const MENU = MENU_GROUPS.flatMap((g) => g.items.map((m) => ({ ...m, group: g.title })));
 
 export default function App() {
   const [user, setUser] = useState(undefined); // undefined = 확인 중
@@ -75,10 +92,15 @@ function Shell() {
           </div>
         </div>
         <nav>
-          {MENU.map((m) => (
-            <NavLink key={m.to} to={m.to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-              <span className="nav-icon" aria-hidden>{m.icon}</span>{m.label}
-            </NavLink>
+          {MENU_GROUPS.map((g, gi) => (
+            <div key={g.title || gi} className={`nav-group ${g.title === '시스템' ? 'nav-group-system' : ''}`}>
+              {g.title && <div className="nav-group-title">{g.title}</div>}
+              {g.items.map((m) => (
+                <NavLink key={m.to} to={m.to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                  <span className="nav-icon" aria-hidden>{m.icon}</span>{m.label}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar-foot muted">
@@ -90,7 +112,12 @@ function Shell() {
       <div className="main">
         <header className="topbar">
           <button className="icon-btn menu-btn" onClick={() => setNavOpen((v) => !v)} aria-label="메뉴">☰</button>
-          <div className="topbar-title">{MENU.find((m) => location.pathname.startsWith(m.to))?.label}</div>
+          <div className="topbar-title">
+            {(() => {
+              const m = MENU.find((x) => location.pathname.startsWith(x.to));
+              return m ? <>{m.group && m.group !== '시스템' && <span className="crumb">{m.group} ›</span>}{m.label}</> : null;
+            })()}
+          </div>
           <div className="topbar-user">
             <div className="user-chip">
               <span className="avatar">{user.name?.[0]}</span>

@@ -46,10 +46,32 @@ CREATE TABLE IF NOT EXISTS pgs (
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
+-- 선불사업자 (선불전자지급수단 발행업자)
+CREATE TABLE IF NOT EXISTS issuers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  biz_no TEXT NOT NULL UNIQUE,
+  reg_no TEXT,
+  ceo_name TEXT,
+  phone TEXT,
+  email TEXT,
+  address TEXT,
+  bin TEXT NOT NULL UNIQUE,
+  protection_type TEXT NOT NULL DEFAULT 'TRUST' CHECK (protection_type IN ('TRUST','GUARANTEE','DEPOSIT')),
+  protection_amount INTEGER NOT NULL DEFAULT 0,
+  registered_at TEXT,
+  manager_name TEXT,
+  manager_phone TEXT,
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','INACTIVE')),
+  memo TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
 CREATE TABLE IF NOT EXISTS cards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   card_no TEXT NOT NULL UNIQUE,
   corporation_id INTEGER NOT NULL REFERENCES corporations(id),
+  issuer_id INTEGER REFERENCES issuers(id),
   holder_name TEXT NOT NULL,
   balance INTEGER NOT NULL DEFAULT 0,
   limit_amount INTEGER NOT NULL DEFAULT 0,
@@ -97,3 +119,10 @@ CREATE INDEX IF NOT EXISTS idx_rec_date ON tx_records(record_date);
 CREATE INDEX IF NOT EXISTS idx_rec_corp ON tx_records(corporation_id);
 CREATE INDEX IF NOT EXISTS idx_rec_pg ON tx_records(pg_id);
 `;
+
+/** 기존 DB 업그레이드 (컬럼 추가 등). db: prepare/exec 를 가진 객체 */
+export function migrate(db) {
+  const cols = db.prepare('PRAGMA table_info(cards)').all().map((c) => c.name);
+  if (!cols.includes('issuer_id')) db.exec('ALTER TABLE cards ADD COLUMN issuer_id INTEGER REFERENCES issuers(id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_cards_issuer ON cards(issuer_id)');
+}

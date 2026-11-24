@@ -47,7 +47,24 @@ test('관리자 로그인 및 거래/잔액 처리', async () => {
 
   const corp = await call('POST', '/corporations', { name: '테스트법인', biz_no: '999-99-99999', status: 'ACTIVE' });
   assert.equal(corp.status, 201);
-  const card = await call('POST', '/cards', { corporation_id: corp.body.id, holder_name: '홍길동', initial_amount: 10000 });
+  const noIssuer = await call('POST', '/cards', { corporation_id: corp.body.id, holder_name: '홍길동' });
+  assert.equal(noIssuer.status, 400);
+  const issuer = await call('POST', '/issuers', { name: '테스트선불', biz_no: '888-88-88888', bin: '9999', protection_type: 'TRUST', protection_amount: '1,000,000' });
+  assert.equal(issuer.status, 201);
+  assert.equal(issuer.body.protection_amount, 1000000);
+  assert.equal((await call('POST', '/issuers', { name: '중복', biz_no: '777-77-77777', bin: '9999' })).status, 400);
+  const blank = await call('POST', '/issuers', { name: '보호금액 미입력', biz_no: '666-66-66666', bin: '9998', protection_amount: '' });
+  assert.equal(blank.status, 201);
+  assert.equal(blank.body.protection_amount, 0);
+  const card = await call('POST', '/cards', { corporation_id: corp.body.id, issuer_id: issuer.body.id, holder_name: '홍길동', initial_amount: 10000 });
+  assert.equal(card.status, 201);
+  assert.ok(card.body.card_no.startsWith('9999'));
+  assert.equal(card.body.issuer_name, '테스트선불');
+  const iss = await call('GET', `/issuers/${issuer.body.id}`);
+  assert.equal(iss.body.card_count, 1);
+  assert.equal(iss.body.total_balance, 10000);
+  assert.equal((await call('DELETE', `/issuers/${issuer.body.id}`)).status, 400); // 카드 있으면 삭제 불가
+  assert.equal((await call('GET', `/cards?issuer_id=${issuer.body.id}`)).body.total, 1);
   assert.equal(card.body.balance, 10000);
 
   const pg = (await call('GET', '/pgs/options')).body[0];

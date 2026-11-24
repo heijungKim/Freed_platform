@@ -9,6 +9,7 @@ import pgRoutes from './routes/pgs.js';
 import cardRoutes from './routes/cards.js';
 import transactionRoutes from './routes/transactions.js';
 import recordRoutes from './routes/records.js';
+import issuerRoutes from './routes/issuers.js';
 import statsRoutes from './routes/stats.js';
 import userRoutes from './routes/users.js';
 
@@ -31,6 +32,7 @@ export function createApp() {
   app.use('/api', requireAdmin);
   app.use('/api/corporations', corporationRoutes);
   app.use('/api/pgs', pgRoutes);
+  app.use('/api/issuers', issuerRoutes); // 선불사업자
   app.use('/api/cards', cardRoutes);
   app.use('/api/transactions', transactionRoutes); // 카드 충전·사용 원장
   app.use('/api/records', recordRoutes); // 거래내역 (수동 입력)

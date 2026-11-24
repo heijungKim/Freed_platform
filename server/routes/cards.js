@@ -7,23 +7,25 @@ import { pick, requireFields, oneOf, paging, insertSql, updateSql, wrap, notFoun
 const router = Router();
 const STATUSES = ['ACTIVE', 'SUSPENDED', 'LOST', 'EXPIRED'];
 
-export function generateCardNo() {
+/** 카드번호 생성: 선불사업자 BIN + 난수 (총 16자리) */
+export function generateCardNo(bin = '9410') {
   for (;;) {
-    let no = '9410';
-    for (let i = 0; i < 12; i++) no += crypto.randomInt(0, 10);
+    let no = String(bin);
+    while (no.length < 16) no += crypto.randomInt(0, 10);
     if (!db.prepare('SELECT 1 FROM cards WHERE card_no = ?').get(no)) return no;
   }
 }
 
 const COLUMN_FILTERS = {
-  card_no: 'k.card_no', corporation_name: 'c.name', holder_name: 'k.holder_name', balance: { sql: 'k.balance', num: true },
+  card_no: 'k.card_no', corporation_name: 'c.name', issuer_name: 'i.name', holder_name: 'k.holder_name', balance: { sql: 'k.balance', num: true },
   limit_amount: { sql: 'k.limit_amount', num: true }, issued_at: 'k.issued_at', expires_at: 'k.expires_at',
   status: { sql: 'k.status', exact: true },
 };
 
 const SELECT = `
-  SELECT k.*, c.name AS corporation_name
-  FROM cards k JOIN corporations c ON c.id = k.corporation_id`;
+  SELECT k.*, c.name AS corporation_name, i.name AS issuer_name, i.bin AS issuer_bin, i.reg_no AS issuer_reg_no
+  FROM cards k JOIN corporations c ON c.id = k.corporation_id
+  LEFT JOIN issuers i ON i.id = k.issuer_id`;
 
 router.get('/', wrap((req, res) => {
   const { page, size, offset } = paging(req.query);
@@ -35,10 +37,11 @@ router.get('/', wrap((req, res) => {
     params.push(q, q);
   }
   if (req.query.corporation_id) { where.push('k.corporation_id = ?'); params.push(req.query.corporation_id); }
+  if (req.query.issuer_id) { where.push('k.issuer_id = ?'); params.push(req.query.issuer_id); }
   if (req.query.status) { where.push('k.status = ?'); params.push(req.query.status); }
   columnFilters(req.query, COLUMN_FILTERS, where, params);
   const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  const from = 'FROM cards k JOIN corporations c ON c.id = k.corporation_id';
+  const from = 'FROM cards k JOIN corporations c ON c.id = k.corporation_id LEFT JOIN issuers i ON i.id = k.issuer_id';
   const total = db.prepare(`SELECT COUNT(*) n ${from} ${w}`).get(...params).n;
   const sum = db.prepare(`SELECT COALESCE(SUM(k.balance),0) s ${from} ${w}`).get(...params).s;
   const rows = db.prepare(`${SELECT} ${w} ORDER BY k.id DESC LIMIT ? OFFSET ?`).all(...params, size, offset);
@@ -47,8 +50,9 @@ router.get('/', wrap((req, res) => {
 
 router.get('/options', (req, res) => {
   res.json(db.prepare(`
-    SELECT k.id, k.card_no, k.holder_name, k.balance, k.status, c.name AS corporation_name
-    FROM cards k JOIN corporations c ON c.id = k.corporation_id ORDER BY k.id DESC`).all());
+    SELECT k.id, k.card_no, k.holder_name, k.balance, k.status, c.name AS corporation_name, i.name AS issuer_name
+    FROM cards k JOIN corporations c ON c.id = k.corporation_id LEFT JOIN issuers i ON i.id = k.issuer_id
+    ORDER BY k.id DESC`).all());
 });
 
 router.get('/:id', wrap((req, res) => {
@@ -59,13 +63,16 @@ router.get('/:id', wrap((req, res) => {
 
 /** 카드 발급 (초기 충전 금액 옵션) */
 router.post('/', wrap((req, res) => {
-  const data = pick(req.body, ['corporation_id', 'holder_name', 'limit_amount', 'expires_at', 'memo']);
-  requireFields(data, { corporation_id: '법인', holder_name: '사용자명' });
+  const data = pick(req.body, ['corporation_id', 'issuer_id', 'holder_name', 'limit_amount', 'expires_at', 'memo']);
+  requireFields(data, { issuer_id: '선불사업자', corporation_id: '법인', holder_name: '사용자명' });
+  const issuer = db.prepare('SELECT * FROM issuers WHERE id = ?').get(data.issuer_id);
+  if (!issuer) throw notFound('선불사업자');
+  if (issuer.status !== 'ACTIVE') throw bad('비활성화된 선불사업자는 카드를 발행할 수 없습니다.');
   const corp = db.prepare('SELECT * FROM corporations WHERE id = ?').get(data.corporation_id);
   if (!corp) throw notFound('법인');
   if (corp.status !== 'ACTIVE') throw bad('비활성화된 법인에는 카드를 발급할 수 없습니다.');
   data.limit_amount = data.limit_amount ? toInt(data.limit_amount, '충전 한도') : 0;
-  data.card_no = generateCardNo();
+  data.card_no = generateCardNo(issuer.bin);
   data.issued_at = new Date().toISOString().slice(0, 10);
   if (!data.expires_at) {
     const d = new Date();

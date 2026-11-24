@@ -11,12 +11,14 @@ import pgRoutes from '../../../server/routes/pgs.js';
 import cardRoutes from '../../../server/routes/cards.js';
 import transactionRoutes from '../../../server/routes/transactions.js';
 import recordRoutes from '../../../server/routes/records.js';
+import issuerRoutes from '../../../server/routes/issuers.js';
 import statsRoutes from '../../../server/routes/stats.js';
 import userRoutes from '../../../server/routes/users.js';
 
 const MOUNTS = [
   ['/api/corporations', corporationRoutes],
   ['/api/pgs', pgRoutes],
+  ['/api/issuers', issuerRoutes],
   ['/api/cards', cardRoutes],
   ['/api/transactions', transactionRoutes],
   ['/api/records', recordRoutes],

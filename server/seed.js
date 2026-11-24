@@ -54,6 +54,23 @@ export function seedDemo() {
       return { id, fee };
     });
 
+    // 선불사업자 (가상의 회사)
+    const issuers = [
+      ['(주)프리드페이', '220-88-70001', '2019-선불-0012', '한지수', '9410', 'TRUST', 150_000_000, '2019-03-11', '서울 영등포구 국제금융로 10'],
+      ['(주)한빛선불', '211-87-70002', '2020-선불-0031', '문태호', '9420', 'GUARANTEE', 80_000_000, '2020-07-01', '서울 중구 세종대로 20'],
+      ['누리머니(주)', '135-86-70003', '2021-선불-0047', '서하윤', '9430', 'DEPOSIT', 50_000_000, '2021-11-22', '경기 성남시 분당구 정자일로 30'],
+    ];
+    const issuerRows = issuers.map(([name, biz, reg, ceo, bin, ptype, pamt, regAt, addr], i) => ({
+      bin,
+      id: Number(db.prepare(`
+        INSERT INTO issuers (name, biz_no, reg_no, ceo_name, phone, email, address, bin, protection_type, protection_amount,
+          registered_at, manager_name, manager_phone, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')`).run(
+        name, biz, reg, ceo, `02-777-${2000 + i}`, `issuer${i + 1}@example.com`, addr, bin, ptype, pamt,
+        regAt, `정산담당${i + 1}`, `010-5555-${3000 + i}`,
+      ).lastInsertRowid),
+    }));
+
     const names = ['김민준', '이서연', '박도윤', '최하은', '정시우', '강지유', '조예준', '윤수아', '장주원', '임하린',
       '한지호', '오서윤', '서건우', '신채원', '권우진', '황지민', '안현우', '송다은', '류은우', '전소율'];
     const merchants = ['GS편의점', '스타벅스코리아', '이마트', '쿠팡', '카카오T', '배달의민족', 'CU편의점', '올리브영',
@@ -68,10 +85,11 @@ export function seedDemo() {
       const exp = new Date(issued);
       exp.setFullYear(exp.getFullYear() + 5);
       const status = i === 22 ? 'SUSPENDED' : i === 23 ? 'LOST' : 'ACTIVE';
+      const issuer = issuerRows[corpIdx % issuerRows.length]; // 법인별로 거래 선불사업자 고정
       const id = Number(db.prepare(`
-        INSERT INTO cards (card_no, corporation_id, holder_name, balance, limit_amount, status, issued_at, expires_at)
-        VALUES (?, ?, ?, 0, ?, ?, ?, ?)`).run(
-        generateCardNo(), corpIds[corpIdx], names[i % names.length], choice([0, 2_000_000, 5_000_000]),
+        INSERT INTO cards (card_no, corporation_id, issuer_id, holder_name, balance, limit_amount, status, issued_at, expires_at)
+        VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`).run(
+        generateCardNo(issuer.bin), corpIds[corpIdx], issuer.id, names[i % names.length], choice([0, 2_000_000, 5_000_000]),
         status, fmtDate(issued), fmtDate(exp),
       ).lastInsertRowid);
       cards.push({ id, corp: corpIds[corpIdx], balance: 0 });
