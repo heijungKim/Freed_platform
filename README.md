@@ -2,14 +2,14 @@
 
 선불카드 플랫폼 운영을 위한 **관리자 전용** ERP입니다.
 
-**▶ 바로 체험하기 (GitHub Pages 데모): https://heijungkim.github.io/freed_platform/**
+**▶ 바로 체험하기 (GitHub Pages 데모): https://heijungkim.github.io/Freed_platform/**
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/heijungKim/freed_platform?quickstart=1)
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/heijungKim/freed_platform)
 
 ## GitHub Pages 데모
 
-https://heijungkim.github.io/freed_platform/ — 설치 없이 링크로 바로 접속 (관리자 `admin` / `admin1234`)
+https://heijungkim.github.io/Freed_platform/ — 설치 없이 링크로 바로 접속 (관리자 `admin` / `admin1234`)
 
 - 서버 코드(`server/routes`, 거래·잔액 로직, 관리자 인증)를 그대로 브라우저 안에서 실행합니다 (SQLite WASM).
 - **데이터는 접속한 각자의 브라우저에만 저장**되며 다른 사람과 공유되지 않습니다. 사이드바의 "데모 데이터 초기화"로 처음 상태로 돌릴 수 있습니다.
