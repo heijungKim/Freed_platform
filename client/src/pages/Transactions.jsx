@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useList, useOptions } from '../hooks.js';
 import { DataTable, FormModal, Modal, PageHeader, Pagination, StatCard, useConfirm, useToast } from '../components/ui.jsx';
@@ -15,8 +16,13 @@ const PRESETS = [
 ];
 
 export default function Transactions() {
-  const [range, setRange] = useState({ from: monthStart(), to: today(), pg_id: '' });
-  const [view, setView] = useState('corp'); // corp | list
+  const [params, setParams] = useSearchParams();
+  const corpId = params.get('corporation_id') || '';
+  const selectCorp = (id) => setParams(id ? { corporation_id: String(id) } : {}, { replace: true });
+  const [period, setPeriod] = useState({ from: monthStart(), to: today(), pg_id: '' });
+  const range = { ...period, corporation_id: corpId };
+  const setRange = (fn) => setPeriod((p) => { const n = fn(p); return { from: n.from, to: n.to, pg_id: n.pg_id }; });
+  const [view, setView] = useState('summary'); // summary | list | items
   const [corps] = useOptions('/corporations/options');
   const [pgs] = useOptions('/pgs/options');
   const [byCorp, setByCorp] = useState(null);
@@ -28,33 +34,64 @@ export default function Transactions() {
 
   const loadSummary = useCallback(async () => {
     try {
-      setByCorp(await api.get('/records/by-corporation', range));
+      setByCorp(await api.get('/records/by-corporation', period));
       setError('');
     } catch (e) { setError(e.message); }
-  }, [range]);
+  }, [period]);
   useEffect(() => { loadSummary(); }, [loadSummary, version]);
 
   const refresh = () => setVersion((v) => v + 1);
-  const s = byCorp?.summary || {};
   const rows = byCorp?.rows || [];
+  const selected = rows.find((r) => String(r.corporation_id) === corpId)
+    || (corpId ? { corporation_id: Number(corpId), corporation_name: corps.find((c) => String(c.id) === corpId)?.name || '', tx_count: 0, total_amount: 0, entries: 0 } : null);
+  const s = selected || byCorp?.summary || {};
   const withRecords = rows.filter((r) => r.entries > 0).length;
+  const tabs = rows.filter((r) => r.status === 'ACTIVE' || r.entries > 0 || String(r.corporation_id) === corpId);
 
   const exportCsv = async () => {
-    try { await api.download('/records/export.csv', range, 'tx_records.csv'); } catch (e) { toast(e.message, 'error'); }
+    try {
+      if (view === 'items') await api.download('/transactions/export.csv', { ...range, records_only: 1 }, 'transaction_items.csv');
+      else await api.download('/records/export.csv', range, 'tx_records.csv');
+    } catch (e) { toast(e.message, 'error'); }
   };
+
+  const VIEWS = [
+    ['summary', corpId ? '일자별 합계' : '법인별 합계'],
+    ['list', '입력 내역'],
+    ['items', '거래 상세 (건별)'],
+  ];
 
   return (
     <>
       <PageHeader
         title="거래내역"
-        desc="법인별 거래건수와 총 금액을 직접 입력하고 기간별로 확인합니다."
+        desc="법인별 거래건수와 총 금액을 입력하면 법인 선불카드에 건별 거래(가맹점·금액)로 나눠 기록됩니다."
         actions={(
           <>
-            <button className="btn" onClick={exportCsv}>CSV 다운로드</button>
+            <button className="btn" onClick={exportCsv}>{view === 'items' ? '건별 CSV' : 'CSV 다운로드'}</button>
             <button className="btn btn-primary" onClick={() => setEntering(true)}>+ 거래 입력</button>
           </>
         )}
       />
+
+      <div className="corp-tabs" role="tablist" aria-label="법인 선택">
+        <button type="button" role="tab" aria-selected={!corpId} className={`corp-tab ${!corpId ? 'on' : ''}`} onClick={() => selectCorp('')}>
+          전체 법인 <span className="cnt">{won(byCorp?.summary?.total_amount)}</span>
+        </button>
+        {tabs.map((c) => (
+          <button
+            key={c.corporation_id}
+            type="button"
+            role="tab"
+            aria-selected={String(c.corporation_id) === corpId}
+            className={`corp-tab ${String(c.corporation_id) === corpId ? 'on' : ''} ${c.status !== 'ACTIVE' ? 'inactive' : ''}`}
+            onClick={() => selectCorp(c.corporation_id)}
+            title={`${num(c.tx_count)}건 · ${won(c.total_amount)}`}
+          >
+            {c.corporation_name} <span className="cnt">{c.total_amount ? won(c.total_amount) : '0'}</span>
+          </button>
+        ))}
+      </div>
 
       <div className="filter-bar">
         <div className="range-picker">
@@ -62,51 +99,55 @@ export default function Transactions() {
             <button
               key={p.label}
               type="button"
-              className={`btn btn-sm ${range.from === p.from() && range.to === today() ? 'btn-primary' : ''}`}
+              className={`btn btn-sm ${period.from === p.from() && period.to === today() ? 'btn-primary' : ''}`}
               onClick={() => setRange((r) => ({ ...r, from: p.from(), to: today() }))}
             >{p.label}</button>
           ))}
-          <input type="date" value={range.from} max={range.to} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} />
+          <input type="date" value={period.from} max={period.to} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} />
           <span>~</span>
-          <input type="date" value={range.to} min={range.from} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} />
+          <input type="date" value={period.to} min={period.from} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} />
         </div>
-        <select value={range.pg_id} onChange={(e) => setRange((r) => ({ ...r, pg_id: e.target.value }))}>
+        <select value={period.pg_id} onChange={(e) => setRange((r) => ({ ...r, pg_id: e.target.value }))}>
           <option value="">전체 PG</option>
           {pgs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
       </div>
 
       <div className="stat-grid">
-        <StatCard label="총 거래건수" value={`${num(s.tx_count)}건`} tone="violet" />
+        <StatCard label={selected ? `${selected.corporation_name} · 거래건수` : '총 거래건수'} value={`${num(s.tx_count)}건`} tone="violet" />
         <StatCard label="총 금액" value={won(s.total_amount)} tone="blue" />
         <StatCard label="건당 평균 금액" value={won(s.tx_count ? Math.round(s.total_amount / s.tx_count) : 0)} />
-        <StatCard label="입력된 법인" value={`${num(withRecords)} / ${num(rows.length)}`} sub={`입력 ${num(s.entries)}회`} tone="green" />
+        {selected ? (
+          <StatCard label="입력 횟수" value={`${num(selected.entries)}회`} sub={selected.last_date ? `최근 거래일 ${selected.last_date}` : '기간 내 입력 없음'} tone="green" />
+        ) : (
+          <StatCard label="입력된 법인" value={`${num(withRecords)} / ${num(rows.length)}`} sub={`입력 ${num(s.entries)}회`} tone="green" />
+        )}
       </div>
 
       {error && <div className="alert">{error}</div>}
 
       <div className="card">
         <div className="card-head">
-          <h2>{view === 'corp' ? '법인별 거래 합계' : '입력 내역'}</h2>
+          <h2>{selected ? `${selected.corporation_name} · ` : ''}{VIEWS.find(([k]) => k === view)[1]}</h2>
           <div className="seg">
-            <button className={view === 'corp' ? 'on' : ''} onClick={() => setView('corp')}>법인별 합계</button>
-            <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>입력 내역</button>
+            {VIEWS.map(([k, label]) => <button key={k} className={view === k ? 'on' : ''} onClick={() => setView(k)}>{label}</button>)}
           </div>
         </div>
-        {view === 'corp' ? (
-          <CorpSummary rows={rows} summary={s} loading={!byCorp} onOpen={setDetailCorp} />
-        ) : (
-          <RecordList range={range} pgs={pgs} corps={corps} version={version} onChanged={refresh} />
-        )}
+        {view === 'summary' && (corpId
+          ? <DailySummary key={corpId} range={range} version={version} onOpenDate={(d) => setDetailCorp({ ...selected, date: d })} />
+          : <CorpSummary rows={rows} summary={byCorp?.summary || {}} loading={!byCorp} onOpen={(r) => selectCorp(r.corporation_id)} />)}
+        {view === 'list' && <RecordList key={corpId} range={range} pgs={pgs} corps={corps} version={version} onChanged={refresh} corporationId={corpId} />}
+        {view === 'items' && <ItemList key={corpId} range={range} version={version} onChanged={refresh} corpSelected={Boolean(corpId)} pgs={pgs} corps={corps} />}
       </div>
 
       {entering && (
         <EntryModal
           corps={corps}
           pgs={pgs}
+          defaultCorpId={corpId}
           onClose={() => setEntering(false)}
           onSaved={(r) => {
-            toast(r.allocated ? `${r.count}건 입력 · 카드 충전 ${num(r.allocated)}건 배분 (${won(r.allocated_amount)})` : `${r.count}건 입력되었습니다.`);
+            toast(r.allocated ? `${r.count}건 입력 · 카드 거래 ${num(r.allocated)}건 생성 (${won(r.allocated_amount)})` : `${r.count}건 입력되었습니다.`);
             setEntering(false); refresh();
           }}
         />
@@ -114,7 +155,7 @@ export default function Transactions() {
       {detailCorp && (
         <CorpDetailModal
           corp={detailCorp}
-          range={range}
+          range={detailCorp.date ? { ...range, from: detailCorp.date, to: detailCorp.date } : range}
           corps={corps}
           pgs={pgs}
           version={version}
@@ -122,6 +163,105 @@ export default function Transactions() {
           onChanged={refresh}
         />
       )}
+    </>
+  );
+}
+
+/* ---------- 일자별 합계 (법인 선택 시) ---------- */
+function DailySummary({ range, version, onOpenDate }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    api.get('/records/by-date', range).then(setData).catch((e) => setError(e.message));
+  }, [range.from, range.to, range.pg_id, range.corporation_id, version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const rows = data?.rows || [];
+  const sum = rows.reduce((a, r) => ({ c: a.c + r.tx_count, t: a.t + r.total_amount }), { c: 0, t: 0 });
+  return (
+    <>
+      {error && <div className="alert">{error}</div>}
+      <DataTable
+        loading={!data}
+        rows={rows}
+        onRowClick={(r) => onOpenDate(r.record_date)}
+        rowTitle="클릭하여 그날 입력 내역 보기"
+        empty="기간 내 입력된 거래가 없습니다."
+        columns={[
+          { key: 'record_date', label: '거래일', filter: true, render: (r) => <strong className="link-text">{r.record_date}</strong> },
+          { key: 'pg_names', label: 'PG', filter: true, render: (r) => r.pg_names || '-' },
+          { key: 'tx_count', label: '거래건수', align: 'right', filter: true, render: (r) => `${num(r.tx_count)}건` },
+          { key: 'total_amount', label: '총 금액', align: 'right', filter: true, render: (r) => <strong>{won(r.total_amount)}</strong> },
+          { key: 'avg', label: '건당 평균', align: 'right', render: (r) => (r.tx_count ? won(Math.round(r.total_amount / r.tx_count)) : '-') },
+          { key: 'alloc_count', label: '카드 거래', align: 'right', render: (r) => (r.alloc_count ? `${num(r.alloc_count)}건` : <span className="muted">미배분</span>) },
+          { key: 'entries', label: '입력 횟수', align: 'right', render: (r) => `${num(r.entries)}회` },
+        ]}
+      />
+      <div className="total-row">
+        <span>합계 ({num(rows.length)}일)</span>
+        <span><b>{num(sum.c)}</b>건</span>
+        <span><b>{won(sum.t)}</b></span>
+      </div>
+    </>
+  );
+}
+
+/* ---------- 거래 상세 (건별) ---------- */
+function ItemList({ range, version, onChanged, corpSelected, pgs, corps }) {
+  const list = useList('/transactions', { records_only: 1, ...range }, 50);
+  const [viewing, setViewing] = useState(null);
+  const [editing, setEditing] = useState(null);
+  useEffect(() => {
+    list.applyFilter('from', range.from);
+    list.applyFilter('to', range.to);
+    list.applyFilter('pg_id', range.pg_id);
+    list.applyFilter('corporation_id', range.corporation_id);
+  }, [range.from, range.to, range.pg_id, range.corporation_id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (version) list.reload(); }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sum = list.data.summary || {};
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  const removeRecord = async (r) => {
+    if (!(await confirm(`${r.record_date} ${r.corporation_name} 입력(${num(r.tx_count)}건 / ${won(r.total_amount)})을 삭제할까요?\n카드 거래도 함께 취소됩니다.`, { danger: true, okLabel: '삭제' }))) return false;
+    try { await api.del(`/records/${r.id}`); toast('삭제되었습니다.'); onChanged(); return true; } catch (e) { toast(e.message, 'error'); return false; }
+  };
+
+  return (
+    <>
+      <DataTable
+        rows={list.data.rows}
+        loading={list.loading}
+        colFilters={list.colFilters}
+        onColFilter={list.onColFilter}
+        onRowClick={(t) => setViewing({ id: t.record_id, record_date: t.transacted_at.slice(0, 10), corporation_name: t.corporation_name, tx_count: 0, total_amount: 0, focusTx: t.id })}
+        rowTitle="클릭하여 이 거래가 속한 입력 상세 보기"
+        empty="기간 내 건별 거래가 없습니다. (카드에 배분된 거래내역만 표시됩니다)"
+        columns={[
+          { key: 'transacted_at', label: '거래일시', filter: true },
+          ...(corpSelected ? [] : [{ key: 'corporation_name', label: '법인', filter: true }]),
+          { key: 'merchant_name', label: '가맹점 상호', filter: true, render: (t) => <strong>{t.merchant_name || '-'}</strong> },
+          { key: 'amount', label: '금액', align: 'right', filter: true, render: (t) => <strong>{won(t.amount)}</strong> },
+          { key: 'card_no', label: '카드번호', filter: true, render: (t) => <span className="mono">{fmtCard(t.card_no)}</span> },
+          { key: 'holder_name', label: '사용자', filter: true },
+          { key: 'pg_name', label: 'PG', filter: true, render: (t) => t.pg_name || '-' },
+          { key: 'approval_no', label: '승인번호', filter: true, render: (t) => <code>{t.approval_no}</code> },
+        ]}
+      />
+      <div className="total-row">
+        <span>조회 합계</span>
+        <span><b>{num(list.data.total)}</b>건</span>
+        <span><b>{won(sum.charge)}</b></span>
+      </div>
+      <Pagination page={list.page} size={list.size} total={list.data.total} onChange={list.setPage} />
+      {viewing && (
+        <AllocationModal
+          record={viewing}
+          onClose={() => setViewing(null)}
+          onEdit={(r) => { setViewing(null); setEditing(r); }}
+          onDelete={async (r) => { if (await removeRecord(r)) setViewing(null); }}
+          onChanged={() => { list.reload(); onChanged(); }}
+        />
+      )}
+      {editing && <RecordEditModal record={editing} corps={corps} pgs={pgs} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); list.reload(); onChanged(); }} />}
     </>
   );
 }
@@ -135,7 +275,7 @@ function CorpSummary({ rows, summary, loading, onOpen }) {
         loading={loading}
         rows={rows.map((r) => ({ ...r, id: r.corporation_id }))}
         onRowClick={onOpen}
-        rowTitle="클릭하여 입력 내역 보기"
+        rowTitle="클릭하여 이 법인만 보기"
         empty="법인이 없습니다."
         columns={[
           { key: 'corporation_name', label: '법인', filter: true, render: (r) => <strong className="link-text">{r.corporation_name}</strong> },
@@ -147,7 +287,7 @@ function CorpSummary({ rows, summary, loading, onOpen }) {
           { key: 'last_date', label: '최근 거래일', filter: true, render: (r) => r.last_date || '-' },
         ]}
       />
-      <p className="table-hint">법인을 누르면 날짜별 입력 내역이 열리고, 각 입력을 수정·삭제할 수 있습니다. 전체 입력은 &apos;입력 내역&apos; 탭에서 볼 수 있습니다.</p>
+      <p className="table-hint">법인을 누르면 해당 법인 탭으로 이동해 일자별 합계·입력 내역·건별 거래(가맹점·금액)를 볼 수 있습니다.</p>
       <div className="total-row">
         <span>합계</span>
         <span><b>{num(summary.tx_count)}</b>건</span>
@@ -239,38 +379,43 @@ function RecordList({ range, pgs, corps, version, onChanged, corporationId, comp
         <span><b>{won(sum.total_amount)}</b></span>
       </div>
       {!compact && <Pagination page={list.page} size={list.size} total={list.data.total} onChange={list.setPage} />}
-      {editing && (
-        <FormModal
-          title="거래내역 수정"
-          initial={{ ...editing, pg_id: editing.pg_id ?? '', allocate: editing.alloc_count > 0 ? 'Y' : 'N' }}
-          fields={[
-            { name: 'record_date', label: '거래일', type: 'date', required: true },
-            { name: 'corporation_id', label: '법인', type: 'select', required: true, options: corps.map((c) => ({ value: c.id, label: c.name })) },
-            { name: 'pg_id', label: 'PG', type: 'select', options: pgs.map((p) => ({ value: p.id, label: p.name })) },
-            { name: 'tx_count', label: '거래건수', type: 'number', min: '0', required: true },
-            { name: 'total_amount', label: '총 금액 (원)', type: 'number', min: '0', required: true },
-            { name: 'allocate', label: '카드 충전 배분', type: 'select', required: true, full: true,
-              hint: '저장하면 기존 배분은 취소되고, 수정한 건수·금액으로 다시 배분됩니다.',
-              options: [{ value: 'Y', label: '법인 선불카드에 자동 배분' }, { value: 'N', label: '배분하지 않음 (기록만)' }] },
-            { name: 'memo', label: '메모', type: 'textarea' },
-          ]}
-          onClose={() => setEditing(null)}
-          onSubmit={async (v) => {
-            await api.put(`/records/${editing.id}`, { ...v, allocate: v.allocate === 'Y' });
-            toast('수정되었습니다.');
-            setEditing(null);
-            onChanged();
-          }}
-        />
-      )}
+      {editing && <RecordEditModal record={editing} corps={corps} pgs={pgs} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} />}
     </>
+  );
+}
+
+/** 거래내역(입력) 수정 */
+function RecordEditModal({ record, corps, pgs, onClose, onSaved }) {
+  const toast = useToast();
+  return (
+    <FormModal
+      title="거래내역 수정"
+      initial={{ ...record, pg_id: record.pg_id ?? '', allocate: record.alloc_count > 0 ? 'Y' : 'N' }}
+      fields={[
+        { name: 'record_date', label: '거래일', type: 'date', required: true },
+        { name: 'corporation_id', label: '법인', type: 'select', required: true, options: corps.map((c) => ({ value: c.id, label: c.name })) },
+        { name: 'pg_id', label: 'PG', type: 'select', options: pgs.map((p) => ({ value: p.id, label: p.name })) },
+        { name: 'tx_count', label: '거래건수', type: 'number', min: '0', required: true },
+        { name: 'total_amount', label: '총 금액 (원)', type: 'number', min: '0', required: true },
+        { name: 'allocate', label: '카드 거래 생성', type: 'select', required: true, full: true,
+          hint: '저장하면 기존 건별 거래는 취소되고, 수정한 건수·금액으로 다시 생성됩니다. (가맹점도 새로 배정)',
+          options: [{ value: 'Y', label: '법인 선불카드에 건별 거래로 자동 배분' }, { value: 'N', label: '배분하지 않음 (기록만)' }] },
+        { name: 'memo', label: '메모', type: 'textarea' },
+      ]}
+      onClose={onClose}
+      onSubmit={async (v) => {
+        await api.put(`/records/${record.id}`, { ...v, allocate: v.allocate === 'Y' });
+        toast('수정되었습니다.');
+        onSaved();
+      }}
+    />
   );
 }
 
 /* ---------- 법인 상세 (입력 내역) ---------- */
 function CorpDetailModal({ corp, range, corps, pgs, version, onClose, onChanged }) {
   return (
-    <Modal title={`${corp.corporation_name} · 거래 입력 내역`} width={900} onClose={onClose}
+    <Modal title={`${corp.corporation_name} · 거래 입력 내역${corp.date ? ` · ${corp.date}` : ''}`} width={900} onClose={onClose}
       footer={<button className="btn" onClick={onClose}>닫기</button>}
     >
       <div className="mini-stats" style={{ marginBottom: 12 }}>
@@ -288,11 +433,11 @@ const emptyLine = () => ({ key: Math.random(), corporation_id: '', tx_count: '',
 const onlyDigits = (v) => v.replace(/[^\d]/g, '');
 const withComma = (v) => (v === '' ? '' : Number(v).toLocaleString('ko-KR'));
 
-function EntryModal({ corps, pgs, onClose, onSaved }) {
+function EntryModal({ corps, pgs, defaultCorpId, onClose, onSaved }) {
   const [date, setDate] = useState(today());
   const [pgId, setPgId] = useState('');
   const [allocate, setAllocate] = useState(true);
-  const [lines, setLines] = useState([emptyLine()]);
+  const [lines, setLines] = useState([{ ...emptyLine(), corporation_id: defaultCorpId ? String(defaultCorpId) : '' }]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const activeCorps = corps.filter((c) => c.status === 'ACTIVE');
@@ -374,8 +519,8 @@ function EntryModal({ corps, pgs, onClose, onSaved }) {
         <label className={`alloc-toggle ${allocate ? 'on' : ''}`}>
           <input type="checkbox" checked={allocate} onChange={(e) => setAllocate(e.target.checked)} />
           <div>
-            <strong>법인 선불카드에 충전으로 자동 배분</strong>
-            <small>입력한 거래건수만큼 법인의 정상 카드에 금액을 다양하게 나눠 충전하고, 합계를 총 금액과 정확히 맞춥니다.</small>
+            <strong>법인 선불카드에 건별 거래로 자동 배분</strong>
+            <small>입력한 거래건수만큼 법인 카드에 가맹점·금액이 다른 거래를 만들고, 합계를 총 금액과 정확히 맞춥니다.</small>
           </div>
         </label>
 
@@ -500,11 +645,11 @@ function AllocationModal({ record: initial, onClose, onEdit, onDelete, onChanged
 
       <div className="modal-section-head">
         <div className="seg">
-          <button className={view === 'tx' ? 'on' : ''} onClick={() => setView('tx')}>충전 거래 {num(rows.length)}건</button>
+          <button className={view === 'tx' ? 'on' : ''} onClick={() => setView('tx')}>건별 거래 {num(rows.length)}건</button>
           <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}>카드별 합계</button>
         </div>
         <button className="btn btn-sm btn-primary-soft" disabled={!activeCards.length} onClick={() => setEditing({})}
-          title={activeCards.length ? undefined : '정상 카드가 없습니다'}>+ 충전 추가</button>
+          title={activeCards.length ? undefined : '정상 카드가 없습니다'}>+ 거래 추가</button>
       </div>
       <div className="modal-section" style={{ marginTop: 0, borderTop: 0, paddingTop: 0 }}>
         {view === 'card' ? (
@@ -523,13 +668,14 @@ function AllocationModal({ record: initial, onClose, onEdit, onDelete, onChanged
         ) : (
           <DataTable
             loading={!data}
-            rows={rows}
+            rows={rows.map((t) => (t.id === initial.focusTx ? { ...t, _focus: true } : t))}
             empty="배분된 충전 거래가 없습니다."
             columns={[
               { key: 'transacted_at', label: '일시', filter: true },
+              { key: 'merchant_name', label: '가맹점 상호', filter: true, render: (t) => t.merchant_name || '-' },
+              { key: 'amount', label: '금액', align: 'right', filter: true, render: (t) => <strong>{won(t.amount)}</strong> },
               { key: 'card_no', label: '카드번호', filter: true, render: (t) => <span className="mono">{fmtCard(t.card_no)}</span> },
               { key: 'holder_name', label: '사용자', filter: true },
-              { key: 'amount', label: '충전 금액', align: 'right', filter: true, render: (t) => <strong>{won(t.amount)}</strong> },
               { key: 'memo', label: '비고', render: (t) => (/수정됨|수동 추가/.test(t.memo || '') ? <span className="badge badge-amber">{t.memo.includes('수정됨') ? '수정됨' : '수동 추가'}</span> : '') },
               { key: 'actions', label: '', align: 'right', render: (t) => (
                 <div className="row-actions">
@@ -542,27 +688,28 @@ function AllocationModal({ record: initial, onClose, onEdit, onDelete, onChanged
         )}
       </div>
       <p className="muted" style={{ fontSize: 12.5, margin: '10px 0 0' }}>
-        충전 거래를 추가·수정·삭제하면 입력의 거래건수와 총 금액이 배분 합계에 맞게 자동으로 바뀝니다.
+        건별 거래를 추가·수정·삭제하면 입력의 거래건수와 총 금액이 합계에 맞게 자동으로 바뀝니다.
       </p>
 
       {editing && (
         <FormModal
-          title={editing.id ? `충전 수정 · ${editing.transacted_at}` : '충전 추가'}
+          title={editing.id ? `거래 수정 · ${editing.transacted_at}` : '거래 추가'}
           submitLabel={editing.id ? '저장' : '추가'}
-          initial={editing.id ? { card_id: editing.card_id, amount: editing.amount } : { card_id: activeCards[0]?.id ?? '' }}
+          initial={editing.id ? { card_id: editing.card_id, amount: editing.amount, merchant_name: editing.merchant_name || '' } : { card_id: activeCards[0]?.id ?? '' }}
           fields={[
             { name: 'card_id', label: '카드', type: 'select', required: true, full: true,
               options: (data?.corp_cards || [])
                 .filter((c) => c.status === 'ACTIVE' || c.id === editing.card_id)
                 .map((c) => ({ value: c.id, label: `${fmtCard(c.card_no)} · ${c.holder_name} · 잔액 ${won(c.balance)}${c.limit_amount ? ` / 한도 ${won(c.limit_amount)}` : ''}` })) },
-            { name: 'amount', label: '충전 금액 (원)', type: 'number', min: '1', required: true, full: true },
+            { name: 'merchant_name', label: '가맹점 상호', full: true, placeholder: editing.id ? '' : '비워두면 금액에 맞는 가맹점 자동 지정' },
+            { name: 'amount', label: '금액 (원)', type: 'number', min: '1', required: true, full: true },
           ]}
           onClose={() => setEditing(null)}
           onSubmit={async (v) => {
             if (editing.id) await api.put(`/records/${record.id}/allocations/${editing.id}`, v);
             else await api.post(`/records/${record.id}/allocations`, v);
             setEditing(null);
-            changed(editing.id ? '충전 거래가 수정되었습니다.' : '충전 거래가 추가되었습니다.');
+            changed(editing.id ? '거래가 수정되었습니다.' : '거래가 추가되었습니다.');
           }}
         />
       )}

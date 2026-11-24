@@ -13,6 +13,7 @@ import crypto from 'node:crypto';
 import { db } from './db.js';
 import { applyTransaction } from './ledger.js';
 import { bad } from './util.js';
+import { pickMerchant } from './merchants.js';
 
 export const MAX_ALLOC_COUNT = 5000;
 
@@ -139,7 +140,7 @@ export function allocateRecord(record, userId) {
   const times = randomTimes(record.record_date, count);
   idx.forEach((i, k) => {
     applyTransaction({
-      card_id: assign[i], pg_id: record.pg_id || null, type: 'CHARGE', amount: amounts[i],
+      card_id: assign[i], pg_id: record.pg_id || null, type: 'CHARGE', amount: amounts[i], merchant_name: pickMerchant(amounts[i]),
       memo: `거래내역 #${record.id} 배분`, transacted_at: times[k], created_by: userId, record_id: record.id,
     });
   });
@@ -194,7 +195,7 @@ function getAllocTx(recordId, txId) {
 }
 
 /** 충전 1건 추가 */
-export function addAllocation(record, { card_id, amount, transacted_at }, userId) {
+export function addAllocation(record, { card_id, amount, transacted_at, merchant_name }, userId) {
   const amt = Number(amount);
   if (!Number.isInteger(amt) || amt < 1) throw bad('금액은 1원 이상의 정수여야 합니다.');
   const card = loadCard(Number(card_id), record.corporation_id);
@@ -203,13 +204,14 @@ export function addAllocation(record, { card_id, amount, transacted_at }, userId
   const time = transacted_at || randomTimes(record.record_date, 1)[0];
   applyTransaction({
     card_id: card.id, pg_id: record.pg_id || null, type: 'CHARGE', amount: amt,
+    merchant_name: String(merchant_name || '').trim().slice(0, 100) || pickMerchant(amt),
     memo: `거래내역 #${record.id} 배분 (수동 추가)`, transacted_at: time, created_by: userId, record_id: record.id,
   });
   return syncRecordTotals(record.id);
 }
 
 /** 충전 1건 수정: 금액 / 카드 변경 */
-export function updateAllocation(record, txId, { card_id, amount }) {
+export function updateAllocation(record, txId, { card_id, amount, merchant_name }) {
   const t = getAllocTx(record.id, txId);
   const amt = amount === undefined || amount === '' ? t.amount : Number(amount);
   if (!Number.isInteger(amt) || amt < 1) throw bad('금액은 1원 이상의 정수여야 합니다.');
@@ -229,8 +231,9 @@ export function updateAllocation(record, txId, { card_id, amount }) {
     db.prepare('UPDATE cards SET balance = balance - ? WHERE id = ?').run(t.amount, oldCard.id);
     db.prepare('UPDATE cards SET balance = balance + ? WHERE id = ?').run(amt, newCard.id);
   }
-  db.prepare("UPDATE transactions SET amount = ?, card_id = ?, memo = ? WHERE id = ?")
-    .run(amt, newCardId, `거래내역 #${record.id} 배분 (수정됨)`, t.id);
+  const merchant = merchant_name === undefined ? t.merchant_name : (String(merchant_name || '').trim().slice(0, 100) || null);
+  db.prepare("UPDATE transactions SET amount = ?, card_id = ?, merchant_name = ?, memo = ? WHERE id = ?")
+    .run(amt, newCardId, merchant, `거래내역 #${record.id} 배분 (수정됨)`, t.id);
   return syncRecordTotals(record.id);
 }
 

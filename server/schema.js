@@ -162,3 +162,15 @@ export function migrate(db) {
     db.exec('PRAGMA user_version = 1');
   }
 }
+
+/** 데이터 보정 (merchants 모듈이 필요한 단계는 여기서) */
+export function migrateData(db, pickMerchant) {
+  const version = db.prepare('PRAGMA user_version').get().user_version;
+  if (version < 2) {
+    // v2: 거래내역 배분 거래에 가맹점 상호 채움
+    const rows = db.prepare('SELECT id, amount FROM transactions WHERE record_id IS NOT NULL AND merchant_name IS NULL').all();
+    const upd = db.prepare('UPDATE transactions SET merchant_name = ? WHERE id = ?');
+    for (const r of rows) upd.run(pickMerchant(r.amount), r.id);
+    db.exec('PRAGMA user_version = 2');
+  }
+}

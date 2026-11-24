@@ -4,9 +4,10 @@
  */
 import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
-import { SCHEMA, migrate } from '../../../server/schema.js';
+import { SCHEMA, migrate, migrateData } from '../../../server/schema.js';
+import { pickMerchant } from '../../../server/merchants.js';
 
-const STORAGE_KEY = 'freed-erp-demo-db-v4';
+const STORAGE_KEY = 'freed-erp-demo-db-v5';
 let raw = null; // sql.js Database
 let dirty = false;
 
@@ -89,5 +90,6 @@ export async function initDb() {
   raw.exec('PRAGMA foreign_keys = ON;');
   raw.exec(SCHEMA);
   migrate(db);
+  migrateData(db, pickMerchant);
   return !saved;
 }

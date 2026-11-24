@@ -3,6 +3,7 @@ import { db, tx } from './db.js';
 import { hashPassword } from './auth.js';
 import { generateCardNo } from './routes/cards.js';
 import { newApprovalNo } from './ledger.js';
+import { allocateRecord } from './allocation.js';
 
 /** 사용자가 한 명도 없으면 기본 최고 관리자 계정을 생성 */
 export function ensureAdmin() {
@@ -153,6 +154,12 @@ export function seedDemo() {
         const amount = count * rand(8, 60) * 1000;
         recIns.run(fmtDate(d), corpId, choice(corpPgs[ci]).id, count, amount, null, `${fmtDate(d)} 18:00:00`);
       });
+    }
+
+    // 최근 30일 거래내역은 카드에 배분 (건별 상세·가맹점 데모). 한도 부족 등으로 실패하면 미배분으로 둠
+    const recent = fmtDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29));
+    for (const r of db.prepare('SELECT * FROM tx_records WHERE record_date >= ? ORDER BY record_date, id').all(recent)) {
+      try { allocateRecord(r, null); } catch { /* 미배분 */ }
     }
 
     // 정산 데모: 그저께까지는 D+1 오전에 전액 정산, 어제 거래는 일부 법인만 정산 (나머지 미정산)

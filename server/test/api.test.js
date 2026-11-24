@@ -198,6 +198,18 @@ test('거래내역 → 법인 카드 충전 자동 배분', async () => {
   assert.equal(al.rows.reduce((s, t) => s + t.amount, 0), 12345670);
   assert.ok(new Set(al.rows.map((t) => t.amount)).size > 10, '금액이 다양해야 함');
   assert.ok(al.rows.every((t) => t.transacted_at.startsWith('2030-02-01 ')));
+  assert.ok(al.rows.every((t) => t.merchant_name), '모든 거래에 가맹점 상호');
+  assert.ok(new Set(al.rows.map((t) => t.merchant_name)).size > 3, '가맹점이 다양해야 함');
+  // 건별 상세: 거래내역 배분 거래만
+  const items = (await call('GET', `/transactions?records_only=1&corporation_id=${corp.id}&from=2030-02-01&to=2030-02-01&size=100`)).body;
+  assert.equal(items.total, 37);
+  assert.ok(items.rows.every((t) => t.record_id === recId && t.merchant_name));
+  const one = items.rows[0];
+  const byMerchant = (await call('GET', `/transactions?records_only=1&corporation_id=${corp.id}&from=2030-02-01&to=2030-02-01&f_merchant_name=${encodeURIComponent(one.merchant_name)}`)).body;
+  assert.ok(byMerchant.rows.every((t) => t.merchant_name.includes(one.merchant_name)));
+  const byDate = (await call('GET', `/records/by-date?corporation_id=${corp.id}&from=2030-02-01&to=2030-02-28`)).body.rows;
+  assert.equal(byDate[0].record_date, '2030-02-01');
+  assert.equal(byDate[0].alloc_count, 37);
   assert.ok(al.cards.length >= 1 && al.cards.length <= 4);
   assert.equal(al.record.alloc_count, 37);
   const cards = (await call('GET', `/cards?corporation_id=${corp.id}`)).body;
@@ -233,7 +245,8 @@ test('거래내역 → 법인 카드 충전 자동 배분', async () => {
   let al2 = (await call('GET', `/records/${recId}/allocations`)).body;
   assert.equal(al2.corp_cards.length, 4);
   const t0 = al2.rows[0];
-  let rec = (await call('PUT', `/records/${recId}/allocations/${t0.id}`, { amount: t0.amount + 500 })).body;
+  let rec = (await call('PUT', `/records/${recId}/allocations/${t0.id}`, { amount: t0.amount + 500, merchant_name: '테스트상점 본점' })).body;
+  assert.equal((await call('GET', `/records/${recId}/allocations`)).body.rows.find((x) => x.id === t0.id).merchant_name, '테스트상점 본점');
   assert.equal(rec.total_amount, 1503);
   assert.equal(rec.tx_count, 5);
   const otherCard = al2.corp_cards.find((c) => c.id !== t0.card_id && !c.limit_amount);

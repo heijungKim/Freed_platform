@@ -261,7 +261,7 @@ export function DataTable({ columns, rows, loading, empty = '데이터가 없습
             <tr
               key={r.id ?? i}
               onClick={onRowClick ? () => onRowClick(r) : undefined}
-              className={onRowClick ? 'clickable' : ''}
+              className={`${onRowClick ? 'clickable' : ''} ${r._focus ? 'row-focus' : ''}`}
               title={onRowClick ? rowTitle : undefined}
             >
               {columns.map((c) => (

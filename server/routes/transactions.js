@@ -15,7 +15,7 @@ const SELECT = `
 
 const COLUMN_FILTERS = {
   transacted_at: 't.transacted_at', approval_no: 't.approval_no', type: { sql: 't.type', exact: true },
-  corporation_name: 'c.name', card: "k.card_no || ' ' || k.holder_name", pg_name: 'p.name',
+  corporation_name: 'c.name', card: "k.card_no || ' ' || k.holder_name", pg_name: 'p.name', card_no: 'k.card_no', holder_name: 'k.holder_name',
   merchant_name: 't.merchant_name', amount: { sql: 't.amount', num: true }, fee: { sql: 't.fee', num: true },
   status: { sql: 't.status', exact: true },
 };
@@ -27,6 +27,8 @@ function buildFilter(q) {
   const to = dateParam(q.to, '종료일');
   if (from) { where.push('t.transacted_at >= ?'); params.push(`${from} 00:00:00`); }
   if (to) { where.push('t.transacted_at <= ?'); params.push(`${to} 23:59:59`); }
+  if (q.records_only === '1' || q.records_only === 'true') where.push('t.record_id IS NOT NULL');
+  if (q.record_id) { where.push('t.record_id = ?'); params.push(q.record_id); }
   for (const key of ['corporation_id', 'pg_id', 'card_id', 'type', 'status']) {
     if (q[key]) { where.push(`t.${key} = ?`); params.push(q[key]); }
   }

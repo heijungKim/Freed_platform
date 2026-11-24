@@ -84,6 +84,18 @@ router.get('/by-corporation', wrap((req, res) => {
   res.json({ rows, summary });
 }));
 
+/** 일자별 합계 (법인 선택 시 사용) */
+router.get('/by-date', wrap((req, res) => {
+  const { w, params } = buildFilter(req.query);
+  const rows = db.prepare(`
+    SELECT r.record_date, COUNT(*) AS entries, SUM(r.tx_count) AS tx_count, SUM(r.total_amount) AS total_amount,
+      SUM(${ALLOC_COUNT}) AS alloc_count, GROUP_CONCAT(DISTINCT p.name) AS pg_names
+    FROM tx_records r JOIN corporations c ON c.id = r.corporation_id LEFT JOIN pgs p ON p.id = r.pg_id
+    LEFT JOIN users u ON u.id = r.created_by ${w}
+    GROUP BY r.record_date ORDER BY r.record_date DESC`).all(...params);
+  res.json({ rows: rows.map((r) => ({ id: r.record_date, ...r })) });
+}));
+
 router.get('/export.csv', wrap((req, res) => {
   const { w, params } = buildFilter(req.query);
   const rows = db.prepare(`${SELECT} ${w} ORDER BY r.record_date DESC, r.id DESC LIMIT 100000`).all(...params);
@@ -151,7 +163,7 @@ router.get('/:id/allocations', wrap((req, res) => {
   const record = db.prepare(`${SELECT} WHERE r.id = ?`).get(id);
   if (!record) throw notFound('거래내역');
   const rows = db.prepare(`
-    SELECT t.id, t.card_id, t.amount, t.transacted_at, t.approval_no, t.memo, k.card_no, k.holder_name, i.name AS issuer_name
+    SELECT t.id, t.card_id, t.amount, t.merchant_name, t.transacted_at, t.approval_no, t.memo, k.card_no, k.holder_name, i.name AS issuer_name
     FROM transactions t JOIN cards k ON k.id = t.card_id LEFT JOIN issuers i ON i.id = k.issuer_id
     WHERE t.record_id = ? AND t.status = 'APPROVED' ORDER BY t.transacted_at, t.id`).all(id);
   const byCard = new Map();

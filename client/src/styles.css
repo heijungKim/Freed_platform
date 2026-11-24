@@ -411,3 +411,4 @@ input:disabled { background: var(--surface-2); color: var(--muted); }
 .corp-tab .cnt-warn { background: var(--red-soft); color: var(--red); }
 .corp-tab.on .cnt-warn { background: rgba(255,255,255,.25); color: #fff; }
 .corp-settle-stats { margin-bottom: 14px; }
+.table tbody tr.row-focus td { background: var(--primary-soft); }
