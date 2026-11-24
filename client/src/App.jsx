@@ -15,9 +15,8 @@ import Issuers from './pages/Issuers.jsx';
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
 
-/** 사이드바 메뉴: 집계(전체 현황) → 법인 / PG / 선불사업 → 사용자 관리(시스템) */
+/** 사이드바 메뉴: 법인 / PG / 선불사업 / 집계 → 사용자 관리(시스템, 하단 고정) */
 const MENU_GROUPS = [
-  { items: [{ to: '/stats', label: '집계', element: <Stats /> }] },
   {
     title: '법인',
     items: [
@@ -36,6 +35,7 @@ const MENU_GROUPS = [
       { to: '/cards', label: '선불카드 관리', element: <Cards /> },
     ],
   },
+  { items: [{ to: '/stats', label: '집계', element: <Stats /> }] },
   { title: '시스템', items: [{ to: '/users', label: '사용자 관리', element: <Users /> }] },
 ];
 const MENU = MENU_GROUPS.flatMap((g) => g.items.map((m) => ({ ...m, group: g.title })));
