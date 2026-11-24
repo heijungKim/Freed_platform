@@ -2,7 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { createTransaction } from '../ledger.js';
-import { pick, requireFields, oneOf, paging, insertSql, updateSql, wrap, notFound, bad, toInt } from '../util.js';
+import { pick, requireFields, oneOf, paging, insertSql, updateSql, wrap, notFound, bad, toInt, columnFilters } from '../util.js';
 
 const router = Router();
 const STATUSES = ['ACTIVE', 'SUSPENDED', 'LOST', 'EXPIRED'];
@@ -14,6 +14,12 @@ export function generateCardNo() {
     if (!db.prepare('SELECT 1 FROM cards WHERE card_no = ?').get(no)) return no;
   }
 }
+
+const COLUMN_FILTERS = {
+  card_no: 'k.card_no', corporation_name: 'c.name', holder_name: 'k.holder_name', balance: { sql: 'k.balance', num: true },
+  limit_amount: { sql: 'k.limit_amount', num: true }, issued_at: 'k.issued_at', expires_at: 'k.expires_at',
+  status: { sql: 'k.status', exact: true },
+};
 
 const SELECT = `
   SELECT k.*, c.name AS corporation_name
@@ -30,9 +36,11 @@ router.get('/', wrap((req, res) => {
   }
   if (req.query.corporation_id) { where.push('k.corporation_id = ?'); params.push(req.query.corporation_id); }
   if (req.query.status) { where.push('k.status = ?'); params.push(req.query.status); }
+  columnFilters(req.query, COLUMN_FILTERS, where, params);
   const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  const total = db.prepare(`SELECT COUNT(*) n FROM cards k ${w}`).get(...params).n;
-  const sum = db.prepare(`SELECT COALESCE(SUM(k.balance),0) s FROM cards k ${w}`).get(...params).s;
+  const from = 'FROM cards k JOIN corporations c ON c.id = k.corporation_id';
+  const total = db.prepare(`SELECT COUNT(*) n ${from} ${w}`).get(...params).n;
+  const sum = db.prepare(`SELECT COALESCE(SUM(k.balance),0) s ${from} ${w}`).get(...params).s;
   const rows = db.prepare(`${SELECT} ${w} ORDER BY k.id DESC LIMIT ? OFFSET ?`).all(...params, size, offset);
   res.json({ rows, total, page, size, totalBalance: sum });
 }));

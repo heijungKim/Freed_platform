@@ -34,16 +34,16 @@ export default function Pgs() {
   };
 
   const columns = [
-    { key: 'id', label: 'No', width: 60 },
-    { key: 'name', label: 'PG사명', render: (r) => <strong>{r.name}</strong> },
-    { key: 'code', label: '코드', render: (r) => <code>{r.code}</code> },
-    { key: 'mid', label: 'MID' },
-    { key: 'fee_rate', label: '수수료율', align: 'right', render: (r) => `${r.fee_rate}%` },
-    { key: 'settlement_cycle', label: '정산주기' },
-    { key: 'tx_count', label: '승인 건수', align: 'right', render: (r) => num(r.tx_count) },
-    { key: 'payment_amount', label: '누적 결제액', align: 'right', render: (r) => won(r.payment_amount) },
-    { key: 'manager_name', label: '담당자' },
-    { key: 'status', label: '상태', render: (r) => <Badge value={r.status} /> },
+    { key: 'id', filter: true, label: 'No', width: 60 },
+    { key: 'name', filter: true, label: 'PG사명', render: (r) => <strong>{r.name}</strong> },
+    { key: 'code', filter: true, label: '코드', render: (r) => <code>{r.code}</code> },
+    { key: 'mid', filter: true, label: 'MID' },
+    { key: 'fee_rate', filter: true, label: '수수료율', align: 'right', render: (r) => `${r.fee_rate}%` },
+    { key: 'settlement_cycle', filter: true, label: '정산주기' },
+    { key: 'tx_count', filter: true, label: '승인 건수', align: 'right', render: (r) => num(r.tx_count) },
+    { key: 'payment_amount', filter: true, label: '누적 결제액', align: 'right', render: (r) => won(r.payment_amount) },
+    { key: 'manager_name', filter: true, label: '담당자' },
+    { key: 'status', label: '상태', filter: [{ value: 'ACTIVE', label: '활성' }, { value: 'INACTIVE', label: '비활성' }], render: (r) => <Badge value={r.status} /> },
     { key: 'actions', label: '', align: 'right', render: (r) => (
       <div className="row-actions">
         <button className="btn btn-sm" onClick={() => setEditing(r)}>수정</button>
@@ -69,7 +69,7 @@ export default function Pgs() {
       </FilterBar>
       {list.error && <div className="alert">{list.error}</div>}
       <div className="card">
-        <DataTable columns={columns} rows={list.data.rows} loading={list.loading} />
+        <DataTable columns={columns} rows={list.data.rows} loading={list.loading} colFilters={list.colFilters} onColFilter={list.onColFilter} />
         <Pagination page={list.page} size={list.size} total={list.data.total} onChange={list.setPage} />
       </div>
       {editing && (

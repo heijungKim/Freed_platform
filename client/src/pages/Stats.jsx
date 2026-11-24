@@ -88,12 +88,12 @@ export default function Stats() {
           <DataTable
             rows={data?.byCorp || []}
             columns={[
-              { key: 'name', label: '법인', render: (r) => <strong>{r.name}</strong> },
-              { key: 'tx_count', label: '건수', align: 'right', render: (r) => num(r.tx_count) },
-              { key: 'charge', label: '충전', align: 'right', render: (r) => won(r.charge) },
-              { key: 'payment', label: '결제', align: 'right', render: (r) => won(r.payment) },
+              { key: 'name', label: '법인', filter: true, render: (r) => <strong>{r.name}</strong> },
+              { key: 'tx_count', label: '건수', align: 'right', filter: true, render: (r) => num(r.tx_count) },
+              { key: 'charge', label: '충전', align: 'right', filter: true, render: (r) => won(r.charge) },
+              { key: 'payment', label: '결제', align: 'right', filter: true, render: (r) => won(r.payment) },
               { key: 'share', label: '결제 비중', width: 140, render: (r) => <Share value={r.payment} total={totalPayment} /> },
-              { key: 'balance', label: '현재 잔액', align: 'right', render: (r) => won(r.balance) },
+              { key: 'balance', label: '현재 잔액', align: 'right', filter: true, render: (r) => won(r.balance) },
             ]}
           />
         </div>
@@ -102,12 +102,12 @@ export default function Stats() {
           <DataTable
             rows={data?.byPg || []}
             columns={[
-              { key: 'name', label: 'PG', render: (r) => <strong>{r.name}</strong> },
-              { key: 'fee_rate', label: '요율', align: 'right', render: (r) => `${r.fee_rate}%` },
-              { key: 'tx_count', label: '건수', align: 'right', render: (r) => num(r.tx_count) },
-              { key: 'payment', label: '결제', align: 'right', render: (r) => won(r.payment) },
+              { key: 'name', label: 'PG', filter: true, render: (r) => <strong>{r.name}</strong> },
+              { key: 'fee_rate', label: '요율', align: 'right', filter: true, render: (r) => `${r.fee_rate}%` },
+              { key: 'tx_count', label: '건수', align: 'right', filter: true, render: (r) => num(r.tx_count) },
+              { key: 'payment', label: '결제', align: 'right', filter: true, render: (r) => won(r.payment) },
               { key: 'share', label: '결제 비중', width: 140, render: (r) => <Share value={r.payment} total={totalPgPayment} /> },
-              { key: 'fee', label: '수수료', align: 'right', render: (r) => won(r.fee) },
+              { key: 'fee', label: '수수료', align: 'right', filter: true, render: (r) => won(r.fee) },
             ]}
           />
         </div>

@@ -1,10 +1,14 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { hashPassword, validatePassword, requireSuperAdmin, destroyUserSessions } from '../auth.js';
-import { pick, requireFields, oneOf, paging, wrap, notFound, bad, insertSql, updateSql } from '../util.js';
+import { pick, requireFields, oneOf, paging, wrap, notFound, bad, insertSql, updateSql, columnFilters } from '../util.js';
 
 const router = Router();
 const ROLES = ['SUPER_ADMIN', 'ADMIN', 'USER'];
+const COLUMN_FILTERS = {
+  id: { sql: 'id', num: true }, username: 'username', name: 'name', email: 'email', role: { sql: 'role', exact: true },
+  status: { sql: 'status', exact: true }, last_login_at: 'last_login_at', created_at: 'created_at',
+};
 const COLS = 'id, username, name, email, role, status, last_login_at, created_at';
 
 /** 남아있는 활성 최고관리자 수 (본인 제외) */
@@ -23,6 +27,7 @@ router.get('/', wrap((req, res) => {
   }
   if (req.query.role) { where.push('role = ?'); params.push(req.query.role); }
   if (req.query.status) { where.push('status = ?'); params.push(req.query.status); }
+  columnFilters(req.query, COLUMN_FILTERS, where, params);
   const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const total = db.prepare(`SELECT COUNT(*) n FROM users ${w}`).get(...params).n;
   const rows = db.prepare(`SELECT ${COLS} FROM users ${w} ORDER BY id DESC LIMIT ? OFFSET ?`).all(...params, size, offset);

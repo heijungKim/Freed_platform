@@ -32,7 +32,7 @@ export function Modal({ title, onClose, children, footer, width = 560 }) {
 /**
  * fields: [{ name, label, type: text|number|date|email|select|textarea|password, options:[{value,label}], required, placeholder, full, hint }]
  */
-export function FormModal({ title, fields, initial = {}, onSubmit, onClose, submitLabel = '저장' }) {
+export function FormModal({ title, fields, initial = {}, onSubmit, onClose, submitLabel = '저장', children, footerLeft, width }) {
   const [values, setValues] = useState(() => {
     const v = {};
     for (const f of fields) v[f.name] = initial[f.name] ?? f.default ?? '';
@@ -58,8 +58,10 @@ export function FormModal({ title, fields, initial = {}, onSubmit, onClose, subm
     <Modal
       title={title}
       onClose={onClose}
+      width={width}
       footer={(
         <>
+          {footerLeft && <div className="foot-left">{footerLeft}</div>}
           <button type="button" className="btn" onClick={onClose}>취소</button>
           <button type="submit" form="form-modal" className="btn btn-primary" disabled={busy}>
             {busy ? '처리 중…' : submitLabel}
@@ -77,6 +79,7 @@ export function FormModal({ title, fields, initial = {}, onSubmit, onClose, subm
         ))}
         {error && <div className="form-error full">{error}</div>}
       </form>
+      {children}
     </Modal>
   );
 }
@@ -157,21 +160,77 @@ export const useConfirm = () => useContext(ConfirmCtx);
 export const useToast = () => useContext(ToastCtx);
 
 /* ---------- Table ---------- */
-/** columns: [{ key, label, render?(row), align?, width? }] */
-export function DataTable({ columns, rows, loading, empty = '데이터가 없습니다.', onRowClick }) {
+/**
+ * columns: [{ key, label, render?(row), align?, width?, filter?: true | [{value,label}], filterValue?(row) }]
+ *   filter: true → 텍스트 부분일치, 배열 → 선택형(정확히 일치). 지정하지 않으면 필터 없음.
+ * 헤더 필터 동작:
+ *   - colFilters + onColFilter 를 넘기면 서버 필터(부모가 API 호출)
+ *   - 넘기지 않으면 현재 rows 를 화면에서 바로 거른다 (집계·팝업 등 전체가 로드된 표)
+ */
+export function DataTable({ columns, rows, loading, empty = '데이터가 없습니다.', onRowClick, colFilters, onColFilter, rowTitle }) {
+  const [localFilters, setLocalFilters] = useState({});
+  const serverMode = Boolean(onColFilter);
+  const values = serverMode ? colFilters || {} : localFilters;
+  const hasFilter = columns.some((c) => c.filter);
+  const active = Object.values(values).some((v) => v !== '' && v !== undefined);
+
+  const setValue = (key, v) => {
+    if (serverMode) onColFilter(key, v);
+    else setLocalFilters((f) => ({ ...f, [key]: v }));
+  };
+  const clearAll = () => {
+    for (const c of columns) if (values[c.key]) setValue(c.key, '');
+  };
+
+  let shown = rows;
+  if (!serverMode && active) {
+    shown = rows.filter((r) => columns.every((c) => {
+      const v = localFilters[c.key];
+      if (!c.filter || v === '' || v === undefined) return true;
+      const raw = c.filterValue ? c.filterValue(r) : r[c.key];
+      if (Array.isArray(c.filter)) return String(raw) === String(v);
+      const needle = String(v).trim().toLowerCase();
+      const hay = String(raw ?? '').toLowerCase();
+      return hay.includes(needle) || hay.includes(needle.replace(/[,원%\s]/g, ''));
+    }));
+  }
+
+  const activeCount = columns.filter((c) => c.filter && values[c.key]).length;
+
   return (
+    <>
+    {activeCount > 0 && (
+      <div className="filter-status">
+        <span>헤더 필터 <b>{activeCount}</b>개 적용 중{!serverMode && ` · ${shown.length.toLocaleString()} / ${rows.length.toLocaleString()}건`}</span>
+        <button type="button" className="btn btn-sm filter-clear" onClick={clearAll}>필터 모두 해제</button>
+      </div>
+    )}
     <div className="table-wrap">
       <table className="table">
         <thead>
           <tr>{columns.map((c) => <th key={c.key} style={{ width: c.width, textAlign: c.align }}>{c.label}</th>)}</tr>
+          {hasFilter && (
+            <tr className="filter-row">
+              {columns.map((c) => (
+                <th key={c.key}>
+                  {c.filter && <ColumnFilter column={c} value={values[c.key] ?? ''} onChange={(v) => setValue(c.key, v)} />}
+                </th>
+              ))}
+            </tr>
+          )}
         </thead>
         <tbody>
-          {loading && !rows.length ? (
+          {loading && !shown.length ? (
             <tr><td colSpan={columns.length} className="table-empty">불러오는 중…</td></tr>
-          ) : !rows.length ? (
-            <tr><td colSpan={columns.length} className="table-empty">{empty}</td></tr>
-          ) : rows.map((r, i) => (
-            <tr key={r.id ?? i} onClick={onRowClick ? () => onRowClick(r) : undefined} className={onRowClick ? 'clickable' : ''}>
+          ) : !shown.length ? (
+            <tr><td colSpan={columns.length} className="table-empty">{active ? '필터 조건에 맞는 데이터가 없습니다.' : empty}</td></tr>
+          ) : shown.map((r, i) => (
+            <tr
+              key={r.id ?? i}
+              onClick={onRowClick ? () => onRowClick(r) : undefined}
+              className={onRowClick ? 'clickable' : ''}
+              title={onRowClick ? rowTitle : undefined}
+            >
               {columns.map((c) => (
                 <td key={c.key} style={{ textAlign: c.align }} data-label={c.label}>
                   {c.render ? c.render(r) : r[c.key] ?? '-'}
@@ -182,6 +241,37 @@ export function DataTable({ columns, rows, loading, empty = '데이터가 없습
         </tbody>
       </table>
     </div>
+    </>
+  );
+}
+
+/** 헤더 필터 입력칸 (텍스트는 입력 후 0.3초 뒤 적용) */
+function ColumnFilter({ column, value, onChange }) {
+  const [text, setText] = useState(value);
+  useEffect(() => { setText(value); }, [value]);
+  useEffect(() => {
+    if (Array.isArray(column.filter) || text === value) return undefined;
+    const t = setTimeout(() => onChange(text), 300);
+    return () => clearTimeout(t);
+  }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (Array.isArray(column.filter)) {
+    return (
+      <select className={`col-filter ${value ? 'on' : ''}`} value={value} onChange={(e) => onChange(e.target.value)} aria-label={`${column.label} 필터`}>
+        <option value="">전체</option>
+        {column.filter.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    );
+  }
+  return (
+    <input
+      className={`col-filter ${value ? 'on' : ''}`}
+      value={text}
+      placeholder="필터"
+      aria-label={`${column.label} 필터`}
+      onChange={(e) => setText(e.target.value)}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onChange(text); } }}
+    />
   );
 }
 

@@ -26,15 +26,15 @@ export default function Users() {
   };
 
   const columns = [
-    { key: 'id', label: 'No', width: 60 },
-    { key: 'username', label: '아이디', render: (r) => <strong>{r.username}{r.id === me.id && <span className="me-tag">나</span>}</strong> },
-    { key: 'name', label: '이름' },
-    { key: 'email', label: '이메일', render: (r) => r.email || '-' },
-    { key: 'role', label: '권한', render: (r) => <Badge value={r.role} kind="role" /> },
+    { key: 'id', filter: true, label: 'No', width: 60 },
+    { key: 'username', filter: true, label: '아이디', render: (r) => <strong>{r.username}{r.id === me.id && <span className="me-tag">나</span>}</strong> },
+    { key: 'name', filter: true, label: '이름' },
+    { key: 'email', filter: true, label: '이메일', render: (r) => r.email || '-' },
+    { key: 'role', label: '권한', filter: ROLE_OPTS, render: (r) => <Badge value={r.role} kind="role" /> },
     { key: 'login', label: 'ERP 접속', render: (r) => (r.role === 'USER' ? <span className="muted">불가</span> : '가능') },
-    { key: 'status', label: '상태', render: (r) => <Badge value={r.status} /> },
-    { key: 'last_login_at', label: '최근 로그인', render: (r) => r.last_login_at || '-' },
-    { key: 'created_at', label: '생성일' },
+    { key: 'status', label: '상태', filter: STATUS_OPTS, render: (r) => <Badge value={r.status} /> },
+    { key: 'last_login_at', filter: true, label: '최근 로그인', render: (r) => r.last_login_at || '-' },
+    { key: 'created_at', filter: true, label: '생성일' },
     ...(isSuper ? [{ key: 'actions', label: '', align: 'right', render: (r) => (
       <div className="row-actions">
         <button className="btn btn-sm" onClick={() => setModal({ mode: 'edit', row: r })}>수정</button>
@@ -67,7 +67,7 @@ export default function Users() {
       </FilterBar>
       {list.error && <div className="alert">{list.error}</div>}
       <div className="card">
-        <DataTable columns={columns} rows={list.data.rows} loading={list.loading} />
+        <DataTable columns={columns} rows={list.data.rows} loading={list.loading} colFilters={list.colFilters} onColFilter={list.onColFilter} />
         <Pagination page={list.page} size={list.size} total={list.data.total} onChange={list.setPage} />
       </div>
 

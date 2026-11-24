@@ -1,9 +1,16 @@
 import { Router } from 'express';
 import { db } from '../db.js';
-import { pick, requireFields, oneOf, paging, insertSql, updateSql, wrap, notFound, bad } from '../util.js';
+import { pick, requireFields, oneOf, paging, insertSql, updateSql, wrap, notFound, bad, columnFilters } from '../util.js';
 
 const router = Router();
 const FIELDS = ['name', 'biz_no', 'ceo_name', 'phone', 'email', 'address', 'contract_date', 'status', 'memo'];
+const CARD_COUNT = '(SELECT COUNT(*) FROM cards WHERE corporation_id = c.id)';
+const CARD_BALANCE = '(SELECT COALESCE(SUM(balance),0) FROM cards WHERE corporation_id = c.id)';
+const COLUMN_FILTERS = {
+  id: { sql: 'c.id', num: true }, name: 'c.name', biz_no: 'c.biz_no', ceo_name: 'c.ceo_name', phone: 'c.phone',
+  card_count: { sql: CARD_COUNT, num: true }, total_balance: { sql: CARD_BALANCE, num: true },
+  contract_date: 'c.contract_date', status: { sql: 'c.status', exact: true },
+};
 const BIZ_NO_RE = /^\d{3}-\d{2}-\d{5}$/;
 
 function validate(data, isCreate) {
@@ -22,18 +29,17 @@ router.get('/', wrap((req, res) => {
     params.push(q, q, q);
   }
   if (req.query.status) { where.push('c.status = ?'); params.push(req.query.status); }
+  columnFilters(req.query, COLUMN_FILTERS, where, params);
   const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const total = db.prepare(`SELECT COUNT(*) n FROM corporations c ${w}`).get(...params).n;
   const rows = db.prepare(`
-    SELECT c.*,
-      (SELECT COUNT(*) FROM cards WHERE corporation_id = c.id) AS card_count,
-      (SELECT COALESCE(SUM(balance),0) FROM cards WHERE corporation_id = c.id) AS total_balance
+    SELECT c.*, ${CARD_COUNT} AS card_count, ${CARD_BALANCE} AS total_balance
     FROM corporations c ${w} ORDER BY c.id DESC LIMIT ? OFFSET ?`).all(...params, size, offset);
   res.json({ rows, total, page, size });
 }));
 
 router.get('/options', (req, res) => {
-  res.json(db.prepare('SELECT id, name, status FROM corporations ORDER BY name').all());
+  res.json(db.prepare(`SELECT c.id, c.name, c.status, ${CARD_COUNT} AS card_count FROM corporations c ORDER BY c.name`).all());
 });
 
 router.get('/:id', wrap((req, res) => {

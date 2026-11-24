@@ -63,6 +63,21 @@ test('관리자 로그인 및 거래/잔액 처리', async () => {
   assert.equal((await call('GET', `/cards/${card.body.id}`)).body.balance, 10000);
 });
 
+test('테이블 헤더 필터 (서버)', async () => {
+  const corps = await call('GET', '/corporations?f_name=' + encodeURIComponent('테스트'));
+  assert.equal(corps.body.total, 1);
+  assert.equal(corps.body.rows[0].name, '테스트법인');
+  const active = await call('GET', '/cards?f_status=ACTIVE');
+  assert.ok(active.body.rows.every((r) => r.status === 'ACTIVE'));
+  const byCorpName = await call('GET', '/cards?f_corporation_name=' + encodeURIComponent('테스트법인'));
+  assert.equal(byCorpName.body.total, 1);
+  const amt = await call('GET', '/transactions?f_amount=' + encodeURIComponent('10,000') + '&f_type=CHARGE&from=2000-01-01');
+  assert.ok(amt.body.total >= 1);
+  assert.ok(amt.body.rows.every((r) => String(r.amount).includes('10000') && r.type === 'CHARGE'));
+  const pct = await call('GET', '/corporations?f_name=' + encodeURIComponent('%'));
+  assert.equal(pct.body.total, 0); // % 는 와일드카드가 아닌 글자로 취급
+});
+
 test('집계 API', async () => {
   const r = await call('GET', '/stats/summary');
   assert.equal(r.status, 200);

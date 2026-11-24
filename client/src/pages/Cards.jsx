@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useList, useOptions } from '../hooks.js';
 import { Badge, DataTable, FilterBar, FormModal, PageHeader, Pagination, StatCard, useConfirm, useToast } from '../components/ui.jsx';
@@ -8,8 +8,18 @@ import { fmtCard, LABELS, num, won } from '../format.js';
 const STATUS_OPTS = Object.entries(LABELS.cardStatus).map(([value, label]) => ({ value, label }));
 
 export default function Cards() {
-  const list = useList('/cards', { q: '', corporation_id: '', status: '' });
-  const [corps] = useOptions('/corporations/options');
+  const [params, setParams] = useSearchParams();
+  const list = useList('/cards', { q: '', corporation_id: params.get('corporation_id') || '', status: '' });
+  const [corps, reloadCorps] = useOptions('/corporations/options');
+  const corpId = list.applied.corporation_id;
+
+  // 법인 선택을 주소(?corporation_id=)와 동기화 → 새로고침/공유해도 유지
+  useEffect(() => {
+    const cur = params.get('corporation_id') || '';
+    if (cur !== String(corpId || '')) setParams(corpId ? { corporation_id: corpId } : {}, { replace: true });
+  }, [corpId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const selectCorp = (id) => list.applyFilter('corporation_id', id ? String(id) : '');
+  const totalCards = corps.reduce((s, c) => s + (c.card_count || 0), 0);
   const [pgs] = useOptions('/pgs/options');
   const [modal, setModal] = useState(null); // {mode:'issue'|'edit'|'charge', row}
   const navigate = useNavigate();
@@ -26,14 +36,14 @@ export default function Cards() {
   };
 
   const columns = [
-    { key: 'card_no', label: '카드번호', render: (r) => <span className="mono">{fmtCard(r.card_no)}</span> },
-    { key: 'corporation_name', label: '법인' },
-    { key: 'holder_name', label: '사용자' },
-    { key: 'balance', label: '잔액', align: 'right', render: (r) => <strong>{won(r.balance)}</strong> },
-    { key: 'limit_amount', label: '충전 한도', align: 'right', render: (r) => (r.limit_amount ? won(r.limit_amount) : '무제한') },
-    { key: 'issued_at', label: '발급일' },
-    { key: 'expires_at', label: '유효기간' },
-    { key: 'status', label: '상태', render: (r) => <Badge value={r.status} kind="cardStatus" /> },
+    { key: 'card_no', label: '카드번호', filter: true, render: (r) => <span className="mono">{fmtCard(r.card_no)}</span> },
+    { key: 'corporation_name', label: '법인', filter: true },
+    { key: 'holder_name', label: '사용자', filter: true },
+    { key: 'balance', label: '잔액', align: 'right', filter: true, render: (r) => <strong>{won(r.balance)}</strong> },
+    { key: 'limit_amount', label: '충전 한도', align: 'right', filter: true, render: (r) => (r.limit_amount ? won(r.limit_amount) : '무제한') },
+    { key: 'issued_at', label: '발급일', filter: true },
+    { key: 'expires_at', label: '유효기간', filter: true },
+    { key: 'status', label: '상태', filter: STATUS_OPTS, render: (r) => <Badge value={r.status} kind="cardStatus" /> },
     { key: 'actions', label: '', align: 'right', render: (r) => (
       <div className="row-actions">
         <button className="btn btn-sm btn-primary-soft" disabled={r.status !== 'ACTIVE'} onClick={() => setModal({ mode: 'charge', row: r })}>충전</button>
@@ -44,7 +54,7 @@ export default function Cards() {
     ) },
   ];
 
-  const done = (msg) => { toast(msg); setModal(null); list.reload(); };
+  const done = (msg) => { toast(msg); setModal(null); list.reload(); reloadCorps(); };
 
   return (
     <>
@@ -53,9 +63,27 @@ export default function Cards() {
         desc="법인별 선불카드 발급, 충전, 상태(정지/분실) 관리를 합니다."
         actions={<button className="btn btn-primary" onClick={() => setModal({ mode: 'issue', row: {} })}>+ 카드 발급</button>}
       />
+      <div className="corp-tabs" role="tablist" aria-label="법인별 보기">
+        <button type="button" role="tab" aria-selected={!corpId} className={`corp-tab ${!corpId ? 'on' : ''}`} onClick={() => selectCorp('')}>
+          전체 법인 <span className="cnt">{num(totalCards)}</span>
+        </button>
+        {corps.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            role="tab"
+            aria-selected={String(corpId) === String(c.id)}
+            className={`corp-tab ${String(corpId) === String(c.id) ? 'on' : ''} ${c.status !== 'ACTIVE' ? 'inactive' : ''}`}
+            onClick={() => selectCorp(c.id)}
+            title={c.status !== 'ACTIVE' ? '비활성 법인' : undefined}
+          >
+            {c.name} <span className="cnt">{num(c.card_count)}</span>
+          </button>
+        ))}
+      </div>
       <FilterBar onSubmit={list.search} onReset={list.reset}>
         <input placeholder="카드번호 / 사용자명" value={list.filters.q} onChange={(e) => list.setFilter('q', e.target.value)} />
-        <select value={list.filters.corporation_id} onChange={(e) => list.setFilter('corporation_id', e.target.value)}>
+        <select value={list.filters.corporation_id} onChange={(e) => selectCorp(e.target.value)}>
           <option value="">전체 법인</option>
           {corps.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
@@ -66,13 +94,13 @@ export default function Cards() {
       </FilterBar>
 
       <div className="stat-grid stat-grid-2">
-        <StatCard label="조회된 카드" value={`${num(list.data.total)}장`} />
+        <StatCard label={corpId ? `${corps.find((c) => String(c.id) === String(corpId))?.name || '선택 법인'} 카드` : '조회된 카드'} value={`${num(list.data.total)}장`} />
         <StatCard label="조회된 카드 잔액 합계" value={won(list.data.totalBalance)} tone="blue" />
       </div>
 
       {list.error && <div className="alert">{list.error}</div>}
       <div className="card">
-        <DataTable columns={columns} rows={list.data.rows} loading={list.loading} />
+        <DataTable columns={columns} rows={list.data.rows} loading={list.loading} colFilters={list.colFilters} onColFilter={list.onColFilter} />
         <Pagination page={list.page} size={list.size} total={list.data.total} onChange={list.setPage} />
       </div>
 
@@ -81,7 +109,7 @@ export default function Cards() {
           title="선불카드 발급"
           submitLabel="발급"
           fields={[
-            { name: 'corporation_id', label: '법인', type: 'select', required: true, full: true,
+            { name: 'corporation_id', label: '법인', type: 'select', required: true, full: true, default: corpId || '',
               options: corps.filter((c) => c.status === 'ACTIVE').map((c) => ({ value: c.id, label: c.name })) },
             { name: 'holder_name', label: '사용자명', required: true },
             { name: 'limit_amount', label: '충전 한도 (원)', type: 'number', min: '0', hint: '0 또는 비워두면 무제한' },

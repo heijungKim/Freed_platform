@@ -288,3 +288,31 @@ input:disabled { background: var(--surface-2); color: var(--muted); }
 .demo-note small { color: #8a5a00; }
 .demo-reset { background: none; border: 1px solid #2a3552; color: var(--sidebar-text); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12px; cursor: pointer; margin-top: 6px; }
 .demo-reset:hover { color: #fff; border-color: #4a5677; }
+
+/* ---------- Header filters ---------- */
+.table thead .filter-row th { background: var(--surface); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.col-filter { height: 28px; width: 100%; min-width: 64px; font-size: 12.5px; padding: 0 8px; border-radius: 6px; background: var(--surface-2); }
+.col-filter.on { border-color: var(--primary); background: var(--primary-soft); }
+.filter-status { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 14px; background: var(--primary-soft); color: var(--primary); font-size: 13px; border-bottom: 1px solid var(--border); }
+.filter-status .btn { height: 26px; }
+.foot-left { margin-right: auto; display: flex; gap: 8px; }
+
+/* ---------- Corporation chips ---------- */
+.corp-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.corp-tab { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; color: var(--text); display: inline-flex; gap: 6px; align-items: center; }
+.corp-tab:hover { border-color: #cfd5e2; }
+.corp-tab.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.corp-tab .cnt { font-size: 11.5px; background: var(--gray-soft); color: var(--gray); border-radius: 999px; padding: 0 7px; }
+.corp-tab.on .cnt { background: rgba(255,255,255,.22); color: #fff; }
+.corp-tab.inactive { color: var(--muted); }
+
+/* ---------- Modal sections ---------- */
+.modal-section { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 16px; }
+.modal-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
+.modal-section-head h4 { margin: 0; font-size: 14px; }
+.modal-section .table-wrap { border: 1px solid var(--border); border-radius: 8px; max-height: 340px; overflow: auto; }
+.modal-section .table th, .modal-section .table td { padding: 8px 10px; font-size: 13px; }
+.modal-section .table thead { position: sticky; top: 0; z-index: 1; }
+.mini-stats { display: flex; gap: 14px; font-size: 13px; color: var(--muted); }
+.mini-stats b { color: var(--text); }
+.table tr.clickable:hover .link-text { color: var(--primary); text-decoration: underline; }

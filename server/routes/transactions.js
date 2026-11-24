@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { createTransaction, cancelTransaction } from '../ledger.js';
-import { paging, wrap, notFound, dateParam, csvEscape, requireFields } from '../util.js';
+import { paging, wrap, notFound, dateParam, csvEscape, requireFields, columnFilters } from '../util.js';
 
 const router = Router();
 
@@ -12,6 +12,13 @@ const SELECT = `
   JOIN corporations c ON c.id = t.corporation_id
   LEFT JOIN pgs p ON p.id = t.pg_id
   LEFT JOIN users u ON u.id = t.created_by`;
+
+const COLUMN_FILTERS = {
+  transacted_at: 't.transacted_at', approval_no: 't.approval_no', type: { sql: 't.type', exact: true },
+  corporation_name: 'c.name', card: "k.card_no || ' ' || k.holder_name", pg_name: 'p.name',
+  merchant_name: 't.merchant_name', amount: { sql: 't.amount', num: true }, fee: { sql: 't.fee', num: true },
+  status: { sql: 't.status', exact: true },
+};
 
 function buildFilter(q) {
   const where = [];
@@ -28,13 +35,15 @@ function buildFilter(q) {
     const like = `%${q.q}%`;
     params.push(like, like, like, like);
   }
+  columnFilters(q, COLUMN_FILTERS, where, params);
   return { w: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
 }
 
 router.get('/', wrap((req, res) => {
   const { page, size, offset } = paging(req.query);
   const { w, params } = buildFilter(req.query);
-  const base = `FROM transactions t JOIN cards k ON k.id = t.card_id ${w}`;
+  const base = `FROM transactions t JOIN cards k ON k.id = t.card_id JOIN corporations c ON c.id = t.corporation_id
+    LEFT JOIN pgs p ON p.id = t.pg_id ${w}`;
   const total = db.prepare(`SELECT COUNT(*) n ${base}`).get(...params).n;
   const summary = db.prepare(`
     SELECT

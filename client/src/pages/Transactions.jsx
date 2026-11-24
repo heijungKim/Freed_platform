@@ -5,6 +5,9 @@ import { useList, useOptions } from '../hooks.js';
 import { Badge, DataTable, FilterBar, FormModal, PageHeader, Pagination, StatCard, useConfirm, useToast } from '../components/ui.jsx';
 import { daysAgo, fmtCard, LABELS, today, won } from '../format.js';
 
+const TYPE_OPTS = Object.entries(LABELS.txType).map(([value, label]) => ({ value, label }));
+const STATUS_OPTS = Object.entries(LABELS.txStatus).map(([value, label]) => ({ value, label }));
+
 export default function Transactions() {
   const [params] = useSearchParams();
   const initial = useMemo(() => ({
@@ -32,27 +35,27 @@ export default function Transactions() {
   };
 
   const columns = [
-    { key: 'transacted_at', label: '거래일시', width: 150 },
-    { key: 'approval_no', label: '승인번호', render: (r) => <code>{r.approval_no}</code> },
-    { key: 'type', label: '유형', render: (r) => <Badge value={r.type} kind="txType" /> },
-    { key: 'corporation_name', label: '법인' },
-    { key: 'card', label: '카드 / 사용자', render: (r) => (
+    { key: 'transacted_at', filter: true, label: '거래일시', width: 150 },
+    { key: 'approval_no', filter: true, label: '승인번호', render: (r) => <code>{r.approval_no}</code> },
+    { key: 'type', label: '유형', filter: TYPE_OPTS, render: (r) => <Badge value={r.type} kind="txType" /> },
+    { key: 'corporation_name', filter: true, label: '법인' },
+    { key: 'card', filter: true, label: '카드 / 사용자', render: (r) => (
       <div className="stack"><span className="mono">{fmtCard(r.card_no)}</span><small className="muted">{r.holder_name}</small></div>
     ) },
-    { key: 'pg_name', label: 'PG', render: (r) => r.pg_name || '-' },
-    { key: 'merchant_name', label: '가맹점', render: (r) => r.merchant_name || '-' },
-    { key: 'amount', label: '금액', align: 'right', render: (r) => (
+    { key: 'pg_name', filter: true, label: 'PG', render: (r) => r.pg_name || '-' },
+    { key: 'merchant_name', filter: true, label: '가맹점', render: (r) => r.merchant_name || '-' },
+    { key: 'amount', filter: true, label: '금액', align: 'right', render: (r) => (
       <strong className={r.status !== 'APPROVED' ? 'strike' : r.type === 'PAYMENT' ? 'neg' : 'pos'}>
         {r.type === 'PAYMENT' ? '-' : '+'}{won(r.amount)}
       </strong>
     ) },
-    { key: 'fee', label: '수수료', align: 'right', render: (r) => (r.fee ? won(r.fee) : '-') },
-    { key: 'status', label: '상태', render: (r) => <Badge value={r.status} kind="txStatus" /> },
+    { key: 'fee', filter: true, label: '수수료', align: 'right', render: (r) => (r.fee ? won(r.fee) : '-') },
+    { key: 'status', label: '상태', filter: STATUS_OPTS, render: (r) => <Badge value={r.status} kind="txStatus" /> },
   ];
 
   const exportCsv = async () => {
     try {
-      await api.download('/transactions/export.csv', list.applied, 'transactions.csv');
+      await api.download('/transactions/export.csv', list.query(), 'transactions.csv');
     } catch (e) { toast(e.message, 'error'); }
   };
 
@@ -105,7 +108,7 @@ export default function Transactions() {
 
       {list.error && <div className="alert">{list.error}</div>}
       <div className="card">
-        <DataTable columns={columns} rows={list.data.rows} loading={list.loading} onRowClick={setDetail} />
+        <DataTable columns={columns} rows={list.data.rows} loading={list.loading} colFilters={list.colFilters} onColFilter={list.onColFilter} onRowClick={setDetail} rowTitle="클릭하여 상세 보기" />
         <Pagination page={list.page} size={list.size} total={list.data.total} onChange={list.setPage} />
       </div>
 

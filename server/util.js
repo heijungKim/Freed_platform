@@ -85,3 +85,24 @@ export function csvEscape(v) {
   if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
+
+/**
+ * 테이블 헤더 필터: 쿼리스트링 f_<컬럼키>=값 을 WHERE 조건으로 변환
+ * map: { key: 'SQL식' (부분일치) | { sql, exact: true } (정확히 일치) | { sql, num: true } (숫자, 콤마 무시 부분일치) }
+ */
+export function columnFilters(query, map, where, params) {
+  for (const [key, def] of Object.entries(map)) {
+    let v = query[`f_${key}`];
+    if (v === undefined || v === null || String(v).trim() === '') continue;
+    v = String(v).trim();
+    const d = typeof def === 'string' ? { sql: def } : def;
+    if (d.exact) {
+      where.push(`${d.sql} = ?`);
+      params.push(v);
+    } else {
+      if (d.num) v = v.replace(/[,원%\s]/g, '');
+      where.push(`CAST(${d.sql} AS TEXT) LIKE ? ESCAPE '\\'`);
+      params.push(`%${v.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+    }
+  }
+}

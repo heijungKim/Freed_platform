@@ -1,9 +1,17 @@
 import { Router } from 'express';
 import { db } from '../db.js';
-import { pick, requireFields, oneOf, paging, insertSql, updateSql, wrap, notFound, bad } from '../util.js';
+import { pick, requireFields, oneOf, paging, insertSql, updateSql, wrap, notFound, bad, columnFilters } from '../util.js';
 
 const router = Router();
 const FIELDS = ['name', 'code', 'mid', 'fee_rate', 'settlement_cycle', 'manager_name', 'manager_phone', 'status', 'memo'];
+
+const TX_COUNT = "(SELECT COUNT(*) FROM transactions WHERE pg_id = p.id AND status = 'APPROVED')";
+const PAY_SUM = "(SELECT COALESCE(SUM(amount),0) FROM transactions WHERE pg_id = p.id AND status = 'APPROVED' AND type = 'PAYMENT')";
+const COLUMN_FILTERS = {
+  id: { sql: 'p.id', num: true }, name: 'p.name', code: 'p.code', mid: 'p.mid', fee_rate: { sql: 'p.fee_rate', num: true },
+  settlement_cycle: 'p.settlement_cycle', tx_count: { sql: TX_COUNT, num: true }, payment_amount: { sql: PAY_SUM, num: true },
+  manager_name: 'p.manager_name', status: { sql: 'p.status', exact: true },
+};
 
 function validate(data, isCreate) {
   if (isCreate) requireFields(data, { name: 'PG사명', code: 'PG 코드', fee_rate: '수수료율' });
@@ -26,12 +34,11 @@ router.get('/', wrap((req, res) => {
     params.push(q, q, q);
   }
   if (req.query.status) { where.push('p.status = ?'); params.push(req.query.status); }
+  columnFilters(req.query, COLUMN_FILTERS, where, params);
   const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const total = db.prepare(`SELECT COUNT(*) n FROM pgs p ${w}`).get(...params).n;
   const rows = db.prepare(`
-    SELECT p.*,
-      (SELECT COUNT(*) FROM transactions WHERE pg_id = p.id AND status = 'APPROVED') AS tx_count,
-      (SELECT COALESCE(SUM(amount),0) FROM transactions WHERE pg_id = p.id AND status = 'APPROVED' AND type = 'PAYMENT') AS payment_amount
+    SELECT p.*, ${TX_COUNT} AS tx_count, ${PAY_SUM} AS payment_amount
     FROM pgs p ${w} ORDER BY p.id DESC LIMIT ? OFFSET ?`).all(...params, size, offset);
   res.json({ rows, total, page, size });
 }));
