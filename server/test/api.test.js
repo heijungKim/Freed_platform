@@ -299,6 +299,48 @@ test('배분은 균등하지 않아야 함 (카드별 합계·금액 편차)', a
   assert.ok(cardCv / 10 > 0.3, `카드별 합계가 너무 균등함: ${(cardCv / 10).toFixed(2)}`);
 });
 
+test('정산 내역 (D+1)', async () => {
+  const corp = (await call('GET', '/corporations?f_name=' + encodeURIComponent('테스트법인'))).body.rows[0];
+  await call('POST', '/records', { record_date: '2031-05-10', allocate: false, items: [{ corporation_id: corp.id, tx_count: 4, total_amount: 400000 }] });
+  await call('POST', '/records', { record_date: '2031-05-10', allocate: false, items: [{ corporation_id: corp.id, tx_count: 1, total_amount: 50000 }] });
+
+  let sum = (await call('GET', '/settlements/summary?date=2031-05-10')).body;
+  assert.equal(sum.settle_date, '2031-05-11');
+  const row = sum.rows.find((r) => r.corporation_id === corp.id);
+  assert.equal(row.tx_count, 5);
+  assert.equal(row.tx_amount, 450000);
+  assert.equal(row.status, 'SCHEDULED'); // 미래 정산일
+  assert.equal(row.unpaid_amount, 450000);
+
+  // 부분 정산 → 전액 정산
+  let r = await call('POST', '/settlements', { tx_date: '2031-05-10', corporation_id: corp.id, paid_amount: '400,000', memo: '1차' });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.status, 'PARTIAL');
+  assert.equal(r.body.unpaid_amount, 50000);
+  r = await call('POST', '/settlements', { tx_date: '2031-05-10', corporation_id: corp.id });
+  assert.equal(r.body.status, 'PAID');
+  assert.equal(r.body.paid_amount, 450000);
+  // 정산 후 거래 추가 → 부분 정산으로 바뀜
+  await call('POST', '/records', { record_date: '2031-05-10', allocate: false, items: [{ corporation_id: corp.id, tx_count: 1, total_amount: 7000 }] });
+  sum = (await call('GET', '/settlements/summary?date=2031-05-10')).body;
+  assert.equal(sum.rows.find((x) => x.corporation_id === corp.id).status, 'PARTIAL');
+  // 일괄 정산
+  const bulk = await call('POST', '/settlements/bulk', { tx_date: '2031-05-10' });
+  assert.equal(bulk.status, 201);
+  sum = (await call('GET', '/settlements/summary?date=2031-05-10')).body;
+  assert.equal(sum.unpaid_amount, 0);
+  assert.equal(sum.paid_amount, sum.tx_amount);
+  assert.equal((await call('POST', '/settlements/bulk', { tx_date: '2031-05-10' })).status, 400);
+  // 일자별
+  const daily = (await call('GET', '/settlements/daily?from=2031-05-01&to=2031-05-31')).body;
+  assert.equal(daily.rows[0].tx_date, '2031-05-10');
+  assert.equal(daily.rows[0].status, 'PAID');
+  // 정산 취소
+  const id = sum.rows.find((x) => x.corporation_id === corp.id).settlement_id;
+  assert.equal((await call('DELETE', `/settlements/${id}`)).status, 200);
+  assert.equal((await call('GET', '/settlements/summary?date=2031-05-10')).body.rows.find((x) => x.corporation_id === corp.id).status, 'SCHEDULED');
+});
+
 test('법인 사용 PG', async () => {
   const corp = (await call('GET', '/corporations?f_name=' + encodeURIComponent('테스트법인'))).body.rows[0];
   const pgs = (await call('GET', '/pgs/options')).body;

@@ -120,6 +120,7 @@ router.delete('/:id', wrap((req, res) => {
   if (used) throw bad(`발급된 선불카드(${used}건)가 있어 삭제할 수 없습니다. 비활성화를 이용하세요.`);
   const recs = db.prepare('SELECT COUNT(*) n FROM tx_records WHERE corporation_id = ?').get(id).n;
   if (recs) throw bad(`입력된 거래내역(${recs}건)이 있어 삭제할 수 없습니다. 비활성화를 이용하세요.`);
+  db.prepare('DELETE FROM settlements WHERE corporation_id = ?').run(id);
   const r = db.prepare('DELETE FROM corporations WHERE id = ?').run(id);
   if (!r.changes) throw notFound('법인');
   res.json({ ok: true });

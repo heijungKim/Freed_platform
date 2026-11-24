@@ -155,6 +155,21 @@ export function seedDemo() {
       });
     }
 
+    // 정산 데모: 그저께까지는 D+1 오전에 전액 정산, 어제 거래는 일부 법인만 정산 (나머지 미정산)
+    const yesterday = fmtDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+    const toSettle = db.prepare(`SELECT corporation_id, record_date, SUM(total_amount) amt FROM tx_records
+      WHERE record_date <= ? GROUP BY corporation_id, record_date`).all(yesterday);
+    const setIns = db.prepare(`INSERT INTO settlements (corporation_id, tx_date, paid_amount, paid_at, memo)
+      VALUES (?, ?, ?, ?, ?)`);
+    for (const t of toSettle) {
+      const [y, m, d] = t.record_date.split('-').map(Number);
+      const settleDay = fmtDate(new Date(y, m - 1, d + 1));
+      if (t.record_date === yesterday && rand(1, 100) <= 50) continue; // 어제 거래: 절반은 아직 미정산
+      const paid = rand(1, 100) <= 4 ? t.amt - rand(1, 20) * 1000 : t.amt; // 가끔 부분 정산
+      setIns.run(t.corporation_id, t.record_date, Math.max(0, paid), `${settleDay} ${pad(rand(9, 11))}:${pad(rand(0, 59))}:00`,
+        paid < t.amt ? '차액 익일 정산 예정' : null);
+    }
+
     // 법인-PG 연결 (거래내역에 입력된 PG + 비활성 법인도 1곳 연결)
     db.exec(`INSERT OR IGNORE INTO corporation_pgs (corporation_id, pg_id)
       SELECT DISTINCT corporation_id, pg_id FROM tx_records WHERE pg_id IS NOT NULL`);

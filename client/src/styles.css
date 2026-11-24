@@ -394,3 +394,17 @@ input:disabled { background: var(--surface-2); color: var(--muted); }
 .line-info { grid-column: 1 / -1; font-size: 12px; color: var(--muted); margin-top: -2px; }
 .line-info.warn { color: var(--red); }
 .table-hint { margin: 0; padding: 10px 14px; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--border); }
+
+/* ---------- 정산 ---------- */
+.settle-hero { border-top: 3px solid var(--primary); }
+.settle-title { display: flex; flex-direction: column; gap: 2px; }
+.settle-title b { color: var(--text); }
+.day-nav { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.day-nav input { height: 30px; font-size: 13px; }
+.settle-stats { padding: 14px 18px 0; margin-bottom: 0; }
+.settle-stats .stat-card { box-shadow: none; }
+.stat-red { border-top-color: var(--red); }
+.settle-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; flex-wrap: wrap; }
+.neg-text { color: var(--red); }
+.filter-bar.flat { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; box-shadow: none; margin: 0; }
+.total-row-4 { grid-template-columns: 1fr auto auto auto; border-top: 0; border-bottom: 1px solid var(--border); }

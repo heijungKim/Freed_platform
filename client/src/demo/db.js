@@ -6,7 +6,7 @@ import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { SCHEMA, migrate } from '../../../server/schema.js';
 
-const STORAGE_KEY = 'freed-erp-demo-db-v3';
+const STORAGE_KEY = 'freed-erp-demo-db-v4';
 let raw = null; // sql.js Database
 let dirty = false;
 

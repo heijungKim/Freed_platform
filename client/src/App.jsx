@@ -11,6 +11,7 @@ import Cards from './pages/Cards.jsx';
 import Stats from './pages/Stats.jsx';
 import Users from './pages/Users.jsx';
 import Issuers from './pages/Issuers.jsx';
+import Settlements from './pages/Settlements.jsx';
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -22,6 +23,7 @@ const MENU_GROUPS = [
     items: [
       { to: '/corporations', label: '법인 관리', element: <Corporations /> },
       { to: '/transactions', label: '거래내역', element: <Transactions /> },
+      { to: '/settlements', label: '정산 내역', element: <Settlements /> },
     ],
   },
   {

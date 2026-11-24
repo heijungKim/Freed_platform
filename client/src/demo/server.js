@@ -12,6 +12,7 @@ import cardRoutes from '../../../server/routes/cards.js';
 import transactionRoutes from '../../../server/routes/transactions.js';
 import recordRoutes from '../../../server/routes/records.js';
 import issuerRoutes from '../../../server/routes/issuers.js';
+import settlementRoutes from '../../../server/routes/settlements.js';
 import statsRoutes from '../../../server/routes/stats.js';
 import userRoutes from '../../../server/routes/users.js';
 
@@ -22,6 +23,7 @@ const MOUNTS = [
   ['/api/cards', cardRoutes],
   ['/api/transactions', transactionRoutes],
   ['/api/records', recordRoutes],
+  ['/api/settlements', settlementRoutes],
   ['/api/stats', statsRoutes],
   ['/api/users', userRoutes],
 ];

@@ -128,6 +128,21 @@ CREATE TABLE IF NOT EXISTS corporation_pgs (
   PRIMARY KEY (corporation_id, pg_id)
 );
 CREATE INDEX IF NOT EXISTS idx_corp_pgs_pg ON corporation_pgs(pg_id);
+
+-- 정산: 법인별 거래일(D) 거래에 대한 정산 지급 기록 (기본 정산일 D+1)
+CREATE TABLE IF NOT EXISTS settlements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  corporation_id INTEGER NOT NULL REFERENCES corporations(id),
+  tx_date TEXT NOT NULL,
+  paid_amount INTEGER NOT NULL CHECK (paid_amount >= 0),
+  paid_at TEXT NOT NULL,
+  memo TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at TEXT,
+  UNIQUE (corporation_id, tx_date)
+);
+CREATE INDEX IF NOT EXISTS idx_settle_date ON settlements(tx_date);
 `;
 
 /** 기존 DB 업그레이드 (컬럼 추가 등). db: prepare/exec 를 가진 객체 */

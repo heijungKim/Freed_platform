@@ -16,6 +16,7 @@ export const LABELS = {
   txStatus: { APPROVED: '승인', CANCELLED: '취소', FAILED: '실패' },
   role: { SUPER_ADMIN: '최고 관리자', ADMIN: '관리자', USER: '일반 사용자' },
   protection: { TRUST: '신탁', GUARANTEE: '지급보증보험', DEPOSIT: '예치' },
+  settle: { PAID: '정산 완료', PARTIAL: '부분 정산', OVER: '초과 정산', UNPAID: '미정산', SCHEDULED: '정산 예정', NONE: '-' },
 };
 
 const TONE = {
@@ -23,5 +24,6 @@ const TONE = {
   CANCELLED: 'red', FAILED: 'red', CHARGE: 'blue', PAYMENT: 'violet', REFUND: 'amber',
   SUPER_ADMIN: 'violet', ADMIN: 'blue', USER: 'gray',
   TRUST: 'blue', GUARANTEE: 'violet', DEPOSIT: 'amber',
+  PAID: 'green', PARTIAL: 'amber', OVER: 'violet', UNPAID: 'red', SCHEDULED: 'blue', NONE: 'gray',
 };
 export const toneOf = (v) => TONE[v] || 'gray';
