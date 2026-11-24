@@ -17,26 +17,26 @@ export const useAuth = () => useContext(AuthCtx);
 
 /** 사이드바 메뉴: 집계(전체 현황) → 법인 / PG / 선불사업 → 사용자 관리(시스템) */
 const MENU_GROUPS = [
-  { items: [{ to: '/stats', label: '집계', icon: '📊', element: <Stats /> }] },
+  { items: [{ to: '/stats', label: '집계', element: <Stats /> }] },
   {
     title: '법인',
     items: [
-      { to: '/corporations', label: '법인 관리', icon: '🏢', element: <Corporations /> },
-      { to: '/transactions', label: '거래내역', icon: '🧾', element: <Transactions /> },
+      { to: '/corporations', label: '법인 관리', element: <Corporations /> },
+      { to: '/transactions', label: '거래내역', element: <Transactions /> },
     ],
   },
   {
     title: 'PG',
-    items: [{ to: '/pgs', label: 'PG 관리', icon: '🔌', element: <Pgs /> }],
+    items: [{ to: '/pgs', label: 'PG 관리', element: <Pgs /> }],
   },
   {
     title: '선불사업',
     items: [
-      { to: '/issuers', label: '선불사업자', icon: '🏦', element: <Issuers /> },
-      { to: '/cards', label: '선불카드 관리', icon: '💳', element: <Cards /> },
+      { to: '/issuers', label: '선불사업자', element: <Issuers /> },
+      { to: '/cards', label: '선불카드 관리', element: <Cards /> },
     ],
   },
-  { title: '시스템', items: [{ to: '/users', label: '사용자 관리', icon: '👤', element: <Users /> }] },
+  { title: '시스템', items: [{ to: '/users', label: '사용자 관리', element: <Users /> }] },
 ];
 const MENU = MENU_GROUPS.flatMap((g) => g.items.map((m) => ({ ...m, group: g.title })));
 
@@ -97,7 +97,7 @@ function Shell() {
               {g.title && <div className="nav-group-title">{g.title}</div>}
               {g.items.map((m) => (
                 <NavLink key={m.to} to={m.to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                  <span className="nav-icon" aria-hidden>{m.icon}</span>{m.label}
+                  {m.label}
                 </NavLink>
               ))}
             </div>

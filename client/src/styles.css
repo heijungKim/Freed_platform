@@ -97,7 +97,6 @@ input:disabled { background: var(--surface-2); color: var(--muted); }
 }
 .nav-item:hover { background: rgba(255,255,255,.06); color: #fff; }
 .nav-item.active { background: var(--primary); color: #fff; }
-.nav-icon { width: 20px; text-align: center; }
 .sidebar-foot { padding: 14px 20px; font-size: 12px; color: #5f6a85; }
 .nav-scrim { display: none; }
 
