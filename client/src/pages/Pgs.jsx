@@ -40,8 +40,8 @@ export default function Pgs() {
     { key: 'mid', filter: true, label: 'MID' },
     { key: 'fee_rate', filter: true, label: '수수료율', align: 'right', render: (r) => `${r.fee_rate}%` },
     { key: 'settlement_cycle', filter: true, label: '정산주기' },
-    { key: 'tx_count', filter: true, label: '승인 건수', align: 'right', render: (r) => num(r.tx_count) },
-    { key: 'payment_amount', filter: true, label: '누적 결제액', align: 'right', render: (r) => won(r.payment_amount) },
+    { key: 'tx_count', filter: true, label: '누적 거래건수', align: 'right', render: (r) => num(r.tx_count) },
+    { key: 'payment_amount', filter: true, label: '누적 거래금액', align: 'right', render: (r) => won(r.payment_amount) },
     { key: 'manager_name', filter: true, label: '담당자' },
     { key: 'status', label: '상태', filter: [{ value: 'ACTIVE', label: '활성' }, { value: 'INACTIVE', label: '비활성' }], render: (r) => <Badge value={r.status} /> },
     { key: 'actions', label: '', align: 'right', render: (r) => (

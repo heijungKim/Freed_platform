@@ -1,3 +1,6 @@
+/**
+ * 집계: 수동 입력된 거래내역(tx_records) 기준
+ */
 import { Router } from 'express';
 import { db } from '../db.js';
 import { wrap, dateParam } from '../util.js';
@@ -11,20 +14,23 @@ function range(q) {
   def.setDate(def.getDate() - 29);
   const from = dateParam(q.from, '시작일') || fmt(def);
   const to = dateParam(q.to, '종료일') || fmt(today);
-  return { from, to, params: [`${from} 00:00:00`, `${to} 23:59:59`] };
+  return { from, to, params: [from, to] };
 }
 
+/** PG 수수료 = 총 금액 × PG 수수료율 (PG 미지정 입력은 0) */
+const FEE = 'COALESCE(ROUND(r.total_amount * p.fee_rate / 100.0), 0)';
 const AGG = `
-  COUNT(CASE WHEN t.status='APPROVED' THEN 1 END) AS tx_count,
-  COALESCE(SUM(CASE WHEN t.status='APPROVED' AND t.type='CHARGE' THEN t.amount END),0) AS charge,
-  COALESCE(SUM(CASE WHEN t.status='APPROVED' AND t.type='PAYMENT' THEN t.amount END),0) AS payment,
-  COALESCE(SUM(CASE WHEN t.status='APPROVED' AND t.type='REFUND' THEN t.amount END),0) AS refund,
-  COALESCE(SUM(CASE WHEN t.status='APPROVED' THEN t.fee END),0) AS fee,
-  COUNT(CASE WHEN t.status='CANCELLED' THEN 1 END) AS cancel_count`;
+  COALESCE(SUM(r.tx_count),0) AS tx_count,
+  COALESCE(SUM(r.total_amount),0) AS total_amount,
+  CAST(COALESCE(SUM(${FEE}),0) AS INTEGER) AS fee,
+  COUNT(r.id) AS entries`;
 
 router.get('/summary', wrap((req, res) => {
   const { from, to, params } = range(req.query);
-  const period = db.prepare(`SELECT ${AGG} FROM transactions t WHERE t.transacted_at BETWEEN ? AND ?`).get(...params);
+  const period = db.prepare(`
+    SELECT ${AGG}, COUNT(DISTINCT r.corporation_id) AS corporations_with_records
+    FROM tx_records r LEFT JOIN pgs p ON p.id = r.pg_id
+    WHERE r.record_date BETWEEN ? AND ?`).get(...params);
   const totals = db.prepare(`
     SELECT
       (SELECT COUNT(*) FROM corporations WHERE status='ACTIVE') AS active_corporations,
@@ -38,10 +44,11 @@ router.get('/summary', wrap((req, res) => {
 
 router.get('/daily', wrap((req, res) => {
   const { from, to, params } = range(req.query);
-  const group = req.query.unit === 'month' ? "substr(t.transacted_at,1,7)" : "substr(t.transacted_at,1,10)";
+  const group = req.query.unit === 'month' ? 'substr(r.record_date,1,7)' : 'r.record_date';
   const rows = db.prepare(`
     SELECT ${group} AS period, ${AGG}
-    FROM transactions t WHERE t.transacted_at BETWEEN ? AND ?
+    FROM tx_records r LEFT JOIN pgs p ON p.id = r.pg_id
+    WHERE r.record_date BETWEEN ? AND ?
     GROUP BY period ORDER BY period`).all(...params);
   res.json({ from, to, rows });
 }));
@@ -53,8 +60,9 @@ router.get('/by-corporation', wrap((req, res) => {
       (SELECT COUNT(*) FROM cards WHERE corporation_id = c.id) AS card_count,
       (SELECT COALESCE(SUM(balance),0) FROM cards WHERE corporation_id = c.id) AS balance
     FROM corporations c
-    LEFT JOIN transactions t ON t.corporation_id = c.id AND t.transacted_at BETWEEN ? AND ?
-    GROUP BY c.id ORDER BY payment DESC, charge DESC`).all(...params);
+    LEFT JOIN tx_records r ON r.corporation_id = c.id AND r.record_date BETWEEN ? AND ?
+    LEFT JOIN pgs p ON p.id = r.pg_id
+    GROUP BY c.id ORDER BY total_amount DESC, c.name`).all(...params);
   res.json({ from, to, rows });
 }));
 
@@ -63,8 +71,8 @@ router.get('/by-pg', wrap((req, res) => {
   const rows = db.prepare(`
     SELECT p.id, p.name, p.code, p.fee_rate, ${AGG}
     FROM pgs p
-    LEFT JOIN transactions t ON t.pg_id = p.id AND t.transacted_at BETWEEN ? AND ?
-    GROUP BY p.id ORDER BY payment DESC`).all(...params);
+    LEFT JOIN tx_records r ON r.pg_id = p.id AND r.record_date BETWEEN ? AND ?
+    GROUP BY p.id ORDER BY total_amount DESC`).all(...params);
   res.json({ from, to, rows });
 }));
 

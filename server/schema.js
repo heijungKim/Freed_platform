@@ -79,4 +79,21 @@ CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(transacted_at);
 CREATE INDEX IF NOT EXISTS idx_tx_corp ON transactions(corporation_id);
 CREATE INDEX IF NOT EXISTS idx_tx_card ON transactions(card_id);
 CREATE INDEX IF NOT EXISTS idx_tx_pg ON transactions(pg_id);
+
+-- 거래내역 (수동 입력): 법인별 일자별 거래건수 / 총 금액
+CREATE TABLE IF NOT EXISTS tx_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  record_date TEXT NOT NULL,
+  corporation_id INTEGER NOT NULL REFERENCES corporations(id),
+  pg_id INTEGER REFERENCES pgs(id),
+  tx_count INTEGER NOT NULL CHECK (tx_count >= 0),
+  total_amount INTEGER NOT NULL CHECK (total_amount >= 0),
+  memo TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_rec_date ON tx_records(record_date);
+CREATE INDEX IF NOT EXISTS idx_rec_corp ON tx_records(corporation_id);
+CREATE INDEX IF NOT EXISTS idx_rec_pg ON tx_records(pg_id);
 `;

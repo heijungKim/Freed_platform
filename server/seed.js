@@ -117,6 +117,22 @@ export function seedDemo() {
     const upd = db.prepare('UPDATE cards SET balance = ? WHERE id = ?');
     for (const c of cards) upd.run(c.balance, c.id);
 
+    // 거래내역(수동 입력) 데모: 최근 90일, 활성 법인별로 2~3일마다 거래건수/총 금액 입력
+    const recIns = db.prepare(`
+      INSERT INTO tx_records (record_date, corporation_id, pg_id, tx_count, total_amount, memo, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    const scale = [1.6, 1.2, 0.8, 1.0, 0.6]; // 법인별 규모 차이
+    for (let day = 89; day >= 0; day--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - day);
+      corpIds.slice(0, 5).forEach((corpId, ci) => {
+        if (rand(1, 100) > 45) return;
+        const count = Math.max(1, Math.round(rand(3, 40) * scale[ci]));
+        const amount = count * rand(8, 60) * 1000;
+        recIns.run(fmtDate(d), corpId, choice(pgRows).id, count, amount, null, `${fmtDate(d)} 18:00:00`);
+      });
+    }
+
     // 데모용 일반 사용자(로그인 불가) & 관리자 — 공개 배포 시에는 SEED_DEMO_USERS=false 로 생성하지 않음
     if (process.env.SEED_DEMO_USERS === 'false') return;
     db.prepare("INSERT INTO users (username, password_hash, name, email, role) VALUES ('manager01', ?, '운영관리자', 'manager01@example.com', 'ADMIN')")

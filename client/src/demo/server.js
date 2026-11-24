@@ -10,6 +10,7 @@ import corporationRoutes from '../../../server/routes/corporations.js';
 import pgRoutes from '../../../server/routes/pgs.js';
 import cardRoutes from '../../../server/routes/cards.js';
 import transactionRoutes from '../../../server/routes/transactions.js';
+import recordRoutes from '../../../server/routes/records.js';
 import statsRoutes from '../../../server/routes/stats.js';
 import userRoutes from '../../../server/routes/users.js';
 
@@ -18,6 +19,7 @@ const MOUNTS = [
   ['/api/pgs', pgRoutes],
   ['/api/cards', cardRoutes],
   ['/api/transactions', transactionRoutes],
+  ['/api/records', recordRoutes],
   ['/api/stats', statsRoutes],
   ['/api/users', userRoutes],
 ];

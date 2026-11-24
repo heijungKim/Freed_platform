@@ -78,6 +78,55 @@ test('테이블 헤더 필터 (서버)', async () => {
   assert.equal(pct.body.total, 0); // % 는 와일드카드가 아닌 글자로 취급
 });
 
+test('거래내역 수동 입력 / 법인별 합계 / 수정 / 삭제', async () => {
+  const corp = (await call('GET', '/corporations?f_name=' + encodeURIComponent('테스트법인'))).body.rows[0];
+  const other = (await call('GET', '/corporations/options')).body.find((c) => c.id !== corp.id && c.status === 'ACTIVE');
+  const pg = (await call('GET', '/pgs/options')).body[0];
+
+  const bad = await call('POST', '/records', { record_date: '2030-01-05', items: [{ corporation_id: corp.id, tx_count: -1, total_amount: 100 }] });
+  assert.equal(bad.status, 400);
+  const noDate = await call('POST', '/records', { items: [{ corporation_id: corp.id, tx_count: 1, total_amount: 100 }] });
+  assert.equal(noDate.status, 400);
+
+  const created = await call('POST', '/records', {
+    record_date: '2030-01-05', pg_id: pg.id,
+    items: [
+      { corporation_id: corp.id, tx_count: '12', total_amount: '1,200,000', memo: '1월 5일분' },
+      { corporation_id: other.id, tx_count: 3, total_amount: 30000 },
+    ],
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.count, 2);
+  await call('POST', '/records', { record_date: '2030-01-06', items: [{ corporation_id: corp.id, tx_count: 8, total_amount: 800000 }] });
+
+  const byCorp = await call('GET', '/records/by-corporation?from=2030-01-01&to=2030-01-31');
+  const mine = byCorp.body.rows.find((r) => r.corporation_id === corp.id);
+  assert.equal(mine.tx_count, 20);
+  assert.equal(mine.total_amount, 2000000);
+  assert.equal(mine.entries, 2);
+  assert.equal(mine.last_date, '2030-01-06');
+  assert.equal(byCorp.body.summary.total_amount, 2030000);
+
+  const list = await call('GET', `/records?from=2030-01-01&to=2030-01-31&corporation_id=${corp.id}`);
+  assert.equal(list.body.total, 2);
+  assert.equal(list.body.summary.tx_count, 20);
+
+  const rec = list.body.rows.find((r) => r.record_date === '2030-01-05');
+  const upd = await call('PUT', `/records/${rec.id}`, { record_date: '2030-01-05', corporation_id: corp.id, pg_id: pg.id, tx_count: 10, total_amount: 1000000 });
+  assert.equal(upd.status, 200);
+  assert.equal(upd.body.tx_count, 10);
+
+  const stats = await call('GET', '/stats/summary?from=2030-01-01&to=2030-01-31');
+  assert.equal(stats.body.period.tx_count, 21);
+  assert.equal(stats.body.period.total_amount, 1830000);
+  assert.equal(stats.body.period.fee, Math.round(1000000 * pg.fee_rate / 100) + Math.round(30000 * pg.fee_rate / 100));
+
+  // 거래내역이 있는 법인은 삭제 불가
+  assert.equal((await call('DELETE', `/corporations/${other.id}`)).status, 400);
+  assert.equal((await call('DELETE', `/records/${rec.id}`)).status, 200);
+  assert.equal((await call('GET', `/records?from=2030-01-01&to=2030-01-31&corporation_id=${corp.id}`)).body.total, 1);
+});
+
 test('집계 API', async () => {
   const r = await call('GET', '/stats/summary');
   assert.equal(r.status, 200);

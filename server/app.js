@@ -8,6 +8,7 @@ import corporationRoutes from './routes/corporations.js';
 import pgRoutes from './routes/pgs.js';
 import cardRoutes from './routes/cards.js';
 import transactionRoutes from './routes/transactions.js';
+import recordRoutes from './routes/records.js';
 import statsRoutes from './routes/stats.js';
 import userRoutes from './routes/users.js';
 
@@ -31,7 +32,8 @@ export function createApp() {
   app.use('/api/corporations', corporationRoutes);
   app.use('/api/pgs', pgRoutes);
   app.use('/api/cards', cardRoutes);
-  app.use('/api/transactions', transactionRoutes);
+  app.use('/api/transactions', transactionRoutes); // 카드 충전·사용 원장
+  app.use('/api/records', recordRoutes); // 거래내역 (수동 입력)
   app.use('/api/stats', statsRoutes);
   app.use('/api/users', userRoutes);
   app.use('/api', (req, res) => res.status(404).json({ error: '존재하지 않는 API입니다.' }));

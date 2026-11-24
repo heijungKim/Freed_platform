@@ -6,7 +6,7 @@ import initSqlJs from 'sql.js';
 import wasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import { SCHEMA } from '../../../server/schema.js';
 
-const STORAGE_KEY = 'freed-erp-demo-db-v1';
+const STORAGE_KEY = 'freed-erp-demo-db-v2';
 let raw = null; // sql.js Database
 let dirty = false;
 

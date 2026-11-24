@@ -33,14 +33,14 @@ export default function Stats() {
 
   const p = data?.summary.period || {};
   const t = data?.summary.totals || {};
-  const totalPayment = data?.byCorp.reduce((s, r) => s + r.payment, 0) || 0;
-  const totalPgPayment = data?.byPg.reduce((s, r) => s + r.payment, 0) || 0;
+  const totalAmount = data?.byCorp.reduce((s, r) => s + r.total_amount, 0) || 0;
+  const totalPgAmount = data?.byPg.reduce((s, r) => s + r.total_amount, 0) || 0;
 
   return (
     <>
       <PageHeader
         title="집계"
-        desc="기간별 거래 실적과 법인·PG별 집계를 확인합니다."
+        desc="거래내역(수동 입력) 기준 기간별 실적과 법인·PG별 집계를 확인합니다."
         actions={(
           <div className="range-picker">
             {PRESETS.map((pr) => (
@@ -59,10 +59,10 @@ export default function Stats() {
       {error && <div className="alert">{error}</div>}
 
       <div className="stat-grid">
-        <StatCard label="결제 금액" value={won(p.payment)} sub={`승인 ${num(p.tx_count)}건 · 취소 ${num(p.cancel_count)}건`} tone="violet" />
-        <StatCard label="충전 금액" value={won(p.charge)} tone="blue" />
-        <StatCard label="환불 금액" value={won(p.refund)} tone="amber" />
-        <StatCard label="PG 수수료" value={won(p.fee)} sub={p.payment ? `평균 ${((p.fee / p.payment) * 100).toFixed(2)}%` : null} />
+        <StatCard label="총 거래건수" value={`${num(p.tx_count)}건`} sub={`입력 ${num(p.entries)}회 · ${num(p.corporations_with_records)}개 법인`} tone="violet" />
+        <StatCard label="총 금액" value={won(p.total_amount)} tone="blue" />
+        <StatCard label="건당 평균 금액" value={won(p.tx_count ? Math.round(p.total_amount / p.tx_count) : 0)} tone="amber" />
+        <StatCard label="PG 수수료 (추정)" value={won(p.fee)} sub={p.total_amount ? `평균 ${((p.fee / p.total_amount) * 100).toFixed(2)}% · PG 지정분 기준` : null} />
       </div>
       <div className="stat-grid">
         <StatCard label="전체 카드 잔액 (선수금)" value={won(t.total_balance)} tone="green" />
@@ -90,9 +90,8 @@ export default function Stats() {
             columns={[
               { key: 'name', label: '법인', filter: true, render: (r) => <strong>{r.name}</strong> },
               { key: 'tx_count', label: '건수', align: 'right', filter: true, render: (r) => num(r.tx_count) },
-              { key: 'charge', label: '충전', align: 'right', filter: true, render: (r) => won(r.charge) },
-              { key: 'payment', label: '결제', align: 'right', filter: true, render: (r) => won(r.payment) },
-              { key: 'share', label: '결제 비중', width: 140, render: (r) => <Share value={r.payment} total={totalPayment} /> },
+              { key: 'total_amount', label: '총 금액', align: 'right', filter: true, render: (r) => won(r.total_amount) },
+              { key: 'share', label: '금액 비중', width: 140, render: (r) => <Share value={r.total_amount} total={totalAmount} /> },
               { key: 'balance', label: '현재 잔액', align: 'right', filter: true, render: (r) => won(r.balance) },
             ]}
           />
@@ -105,8 +104,8 @@ export default function Stats() {
               { key: 'name', label: 'PG', filter: true, render: (r) => <strong>{r.name}</strong> },
               { key: 'fee_rate', label: '요율', align: 'right', filter: true, render: (r) => `${r.fee_rate}%` },
               { key: 'tx_count', label: '건수', align: 'right', filter: true, render: (r) => num(r.tx_count) },
-              { key: 'payment', label: '결제', align: 'right', filter: true, render: (r) => won(r.payment) },
-              { key: 'share', label: '결제 비중', width: 140, render: (r) => <Share value={r.payment} total={totalPgPayment} /> },
+              { key: 'total_amount', label: '총 금액', align: 'right', filter: true, render: (r) => won(r.total_amount) },
+              { key: 'share', label: '금액 비중', width: 140, render: (r) => <Share value={r.total_amount} total={totalPgAmount} /> },
               { key: 'fee', label: '수수료', align: 'right', filter: true, render: (r) => won(r.fee) },
             ]}
           />
@@ -126,19 +125,19 @@ function Share({ value, total }) {
   );
 }
 
-/** 결제/충전 그룹 막대 차트 (SVG) */
+/** 총 금액 막대 차트 (SVG) */
 function BarChart({ rows }) {
   const [hover, setHover] = useState(null);
-  if (!rows.length) return <div className="table-empty">해당 기간에 거래가 없습니다.</div>;
+  if (!rows.length) return <div className="table-empty">해당 기간에 입력된 거래내역이 없습니다.</div>;
   const W = 900;
   const H = 260;
   const pad = { l: 64, r: 12, t: 12, b: 28 };
-  const max = Math.max(1, ...rows.map((r) => Math.max(r.payment, r.charge)));
+  const max = Math.max(1, ...rows.map((r) => r.total_amount));
   const niceMax = niceCeil(max);
   const iw = W - pad.l - pad.r;
   const ih = H - pad.t - pad.b;
   const slot = iw / rows.length;
-  const bw = Math.max(2, Math.min(18, slot / 2 - 2));
+  const bw = Math.max(2, Math.min(28, slot * 0.6));
   const y = (v) => pad.t + ih - (v / niceMax) * ih;
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * niceMax);
   const labelEvery = Math.ceil(rows.length / 10);
@@ -146,8 +145,7 @@ function BarChart({ rows }) {
   return (
     <div className="chart">
       <div className="legend">
-        <span><i className="sw sw-pay" />결제</span>
-        <span><i className="sw sw-charge" />충전</span>
+        <span><i className="sw sw-pay" />총 금액</span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="거래 추이 차트">
         {ticks.map((tv) => (
@@ -161,8 +159,7 @@ function BarChart({ rows }) {
           return (
             <g key={r.period} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
               <rect x={pad.l + slot * i} y={pad.t} width={slot} height={ih} className={hover === i ? 'hover-band' : 'band'} />
-              <rect x={cx - bw - 1} y={y(r.payment)} width={bw} height={pad.t + ih - y(r.payment)} rx="2" className="bar-pay" />
-              <rect x={cx + 1} y={y(r.charge)} width={bw} height={pad.t + ih - y(r.charge)} rx="2" className="bar-charge" />
+              <rect x={cx - bw / 2} y={y(r.total_amount)} width={bw} height={pad.t + ih - y(r.total_amount)} rx="2" className="bar-pay" />
               {i % labelEvery === 0 && (
                 <text x={cx} y={H - 8} textAnchor="middle" className="axis-text">{r.period.length > 7 ? r.period.slice(5) : r.period}</text>
               )}
@@ -173,8 +170,7 @@ function BarChart({ rows }) {
       {hover !== null && (
         <div className="chart-tip" style={{ left: `${((pad.l + slot * hover + slot / 2) / W) * 100}%` }}>
           <strong>{rows[hover].period}</strong>
-          <div>결제 {won(rows[hover].payment)}</div>
-          <div>충전 {won(rows[hover].charge)}</div>
+          <div>총 금액 {won(rows[hover].total_amount)}</div>
           <div>건수 {num(rows[hover].tx_count)}</div>
         </div>
       )}

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useList, useOptions } from '../hooks.js';
-import { Badge, DataTable, FilterBar, FormModal, PageHeader, Pagination, StatCard, useConfirm, useToast } from '../components/ui.jsx';
+import { Badge, DataTable, FilterBar, FormModal, Modal, PageHeader, Pagination, StatCard, useConfirm, useToast } from '../components/ui.jsx';
 import { fmtCard, LABELS, num, won } from '../format.js';
 
 const STATUS_OPTS = Object.entries(LABELS.cardStatus).map(([value, label]) => ({ value, label }));
@@ -22,7 +22,6 @@ export default function Cards() {
   const totalCards = corps.reduce((s, c) => s + (c.card_count || 0), 0);
   const [pgs] = useOptions('/pgs/options');
   const [modal, setModal] = useState(null); // {mode:'issue'|'edit'|'charge', row}
-  const navigate = useNavigate();
   const confirm = useConfirm();
   const toast = useToast();
 
@@ -47,7 +46,7 @@ export default function Cards() {
     { key: 'actions', label: '', align: 'right', render: (r) => (
       <div className="row-actions">
         <button className="btn btn-sm btn-primary-soft" disabled={r.status !== 'ACTIVE'} onClick={() => setModal({ mode: 'charge', row: r })}>충전</button>
-        <button className="btn btn-sm" onClick={() => navigate(`/transactions?card_id=${r.id}`)}>거래</button>
+        <button className="btn btn-sm" onClick={() => setModal({ mode: 'history', row: r })}>이력</button>
         <button className="btn btn-sm" onClick={() => setModal({ mode: 'edit', row: r })}>수정</button>
         <button className="btn btn-sm btn-ghost-danger" onClick={() => remove(r)}>삭제</button>
       </div>
@@ -104,6 +103,7 @@ export default function Cards() {
         <Pagination page={list.page} size={list.size} total={list.data.total} onChange={list.setPage} />
       </div>
 
+      {modal?.mode === 'history' && <CardHistory card={modal.row} onClose={() => setModal(null)} />}
       {modal?.mode === 'issue' && (
         <FormModal
           title="선불카드 발급"
@@ -161,5 +161,43 @@ export default function Cards() {
         />
       )}
     </>
+  );
+}
+
+/** 카드 충전·사용 이력 (카드 원장) */
+function CardHistory({ card, onClose }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    api.get('/transactions', { card_id: card.id, size: 500 }).then(setData).catch((e) => setError(e.message));
+  }, [card.id]);
+  return (
+    <Modal title={`카드 이력 · ${fmtCard(card.card_no)}`} width={820} onClose={onClose}
+      footer={<button className="btn" onClick={onClose}>닫기</button>}
+    >
+      <div className="mini-stats" style={{ marginBottom: 12 }}>
+        <span>{card.corporation_name} · {card.holder_name}</span>
+        <span>현재 잔액 <b>{won(card.balance)}</b></span>
+      </div>
+      {error && <div className="alert">{error}</div>}
+      <div className="modal-section" style={{ marginTop: 0, borderTop: 0, paddingTop: 0 }}>
+        <DataTable
+          loading={!data}
+          rows={data?.rows || []}
+          empty="이력이 없습니다."
+          columns={[
+            { key: 'transacted_at', label: '일시', filter: true },
+            { key: 'type', label: '구분', filter: Object.entries(LABELS.txType).map(([value, label]) => ({ value, label })),
+              render: (r) => <Badge value={r.type} kind="txType" /> },
+            { key: 'amount', label: '금액', align: 'right', filter: true,
+              render: (r) => <span className={r.status !== 'APPROVED' ? 'strike' : ''}>{r.type === 'PAYMENT' ? '-' : '+'}{won(r.amount)}</span> },
+            { key: 'merchant_name', label: '가맹점', filter: true, render: (r) => r.merchant_name || '-' },
+            { key: 'memo', label: '메모', render: (r) => r.memo || '-' },
+            { key: 'status', label: '상태', filter: Object.entries(LABELS.txStatus).map(([value, label]) => ({ value, label })),
+              render: (r) => <Badge value={r.status} kind="txStatus" /> },
+          ]}
+        />
+      </div>
+    </Modal>
   );
 }

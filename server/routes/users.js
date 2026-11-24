@@ -84,6 +84,7 @@ router.delete('/:id', requireSuperAdmin, wrap((req, res) => {
   if (!user) throw notFound('사용자');
   if (user.role === 'SUPER_ADMIN' && otherActiveSuperAdmins(id) === 0) throw bad('최소 1명의 활성 최고 관리자가 필요합니다.');
   db.prepare('UPDATE transactions SET created_by = NULL WHERE created_by = ?').run(id);
+  db.prepare('UPDATE tx_records SET created_by = NULL WHERE created_by = ?').run(id);
   db.prepare('DELETE FROM users WHERE id = ?').run(id);
   res.json({ ok: true });
 }));

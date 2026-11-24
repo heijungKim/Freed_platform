@@ -5,8 +5,9 @@ import { pick, requireFields, oneOf, paging, insertSql, updateSql, wrap, notFoun
 const router = Router();
 const FIELDS = ['name', 'code', 'mid', 'fee_rate', 'settlement_cycle', 'manager_name', 'manager_phone', 'status', 'memo'];
 
-const TX_COUNT = "(SELECT COUNT(*) FROM transactions WHERE pg_id = p.id AND status = 'APPROVED')";
-const PAY_SUM = "(SELECT COALESCE(SUM(amount),0) FROM transactions WHERE pg_id = p.id AND status = 'APPROVED' AND type = 'PAYMENT')";
+// 거래내역(수동 입력) 기준 누적 거래건수 / 총 금액
+const TX_COUNT = '(SELECT COALESCE(SUM(tx_count),0) FROM tx_records WHERE pg_id = p.id)';
+const PAY_SUM = '(SELECT COALESCE(SUM(total_amount),0) FROM tx_records WHERE pg_id = p.id)';
 const COLUMN_FILTERS = {
   id: { sql: 'p.id', num: true }, name: 'p.name', code: 'p.code', mid: 'p.mid', fee_rate: { sql: 'p.fee_rate', num: true },
   settlement_cycle: 'p.settlement_cycle', tx_count: { sql: TX_COUNT, num: true }, payment_amount: { sql: PAY_SUM, num: true },
@@ -79,7 +80,8 @@ router.put('/:id', wrap((req, res) => {
 
 router.delete('/:id', wrap((req, res) => {
   const id = Number(req.params.id);
-  const used = db.prepare('SELECT COUNT(*) n FROM transactions WHERE pg_id = ?').get(id).n;
+  const used = db.prepare('SELECT COUNT(*) n FROM transactions WHERE pg_id = ?').get(id).n
+    + db.prepare('SELECT COUNT(*) n FROM tx_records WHERE pg_id = ?').get(id).n;
   if (used) throw bad(`거래내역(${used}건)이 있어 삭제할 수 없습니다. 비활성화를 이용하세요.`);
   const r = db.prepare('DELETE FROM pgs WHERE id = ?').run(id);
   if (!r.changes) throw notFound('PG');
