@@ -8,10 +8,11 @@ const FIELDS = ['name', 'code', 'mid', 'fee_rate', 'settlement_cycle', 'manager_
 // 거래내역(수동 입력) 기준 누적 거래건수 / 총 금액
 const TX_COUNT = '(SELECT COALESCE(SUM(tx_count),0) FROM tx_records WHERE pg_id = p.id)';
 const PAY_SUM = '(SELECT COALESCE(SUM(total_amount),0) FROM tx_records WHERE pg_id = p.id)';
+const CORP_COUNT = '(SELECT COUNT(*) FROM corporation_pgs WHERE pg_id = p.id)';
 const COLUMN_FILTERS = {
   id: { sql: 'p.id', num: true }, name: 'p.name', code: 'p.code', mid: 'p.mid', fee_rate: { sql: 'p.fee_rate', num: true },
   settlement_cycle: 'p.settlement_cycle', tx_count: { sql: TX_COUNT, num: true }, payment_amount: { sql: PAY_SUM, num: true },
-  manager_name: 'p.manager_name', status: { sql: 'p.status', exact: true },
+  manager_name: 'p.manager_name', status: { sql: 'p.status', exact: true }, corporation_count: { sql: CORP_COUNT, num: true },
 };
 
 function validate(data, isCreate) {
@@ -39,7 +40,7 @@ router.get('/', wrap((req, res) => {
   const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const total = db.prepare(`SELECT COUNT(*) n FROM pgs p ${w}`).get(...params).n;
   const rows = db.prepare(`
-    SELECT p.*, ${TX_COUNT} AS tx_count, ${PAY_SUM} AS payment_amount
+    SELECT p.*, ${TX_COUNT} AS tx_count, ${PAY_SUM} AS payment_amount, ${CORP_COUNT} AS corporation_count
     FROM pgs p ${w} ORDER BY p.id DESC LIMIT ? OFFSET ?`).all(...params, size, offset);
   res.json({ rows, total, page, size });
 }));

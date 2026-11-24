@@ -118,6 +118,15 @@ CREATE TABLE IF NOT EXISTS tx_records (
 CREATE INDEX IF NOT EXISTS idx_rec_date ON tx_records(record_date);
 CREATE INDEX IF NOT EXISTS idx_rec_corp ON tx_records(corporation_id);
 CREATE INDEX IF NOT EXISTS idx_rec_pg ON tx_records(pg_id);
+
+-- 법인이 사용하는 PG (계약/연동 PG)
+CREATE TABLE IF NOT EXISTS corporation_pgs (
+  corporation_id INTEGER NOT NULL REFERENCES corporations(id) ON DELETE CASCADE,
+  pg_id INTEGER NOT NULL REFERENCES pgs(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (corporation_id, pg_id)
+);
+CREATE INDEX IF NOT EXISTS idx_corp_pgs_pg ON corporation_pgs(pg_id);
 `;
 
 /** 기존 DB 업그레이드 (컬럼 추가 등). db: prepare/exec 를 가진 객체 */
@@ -125,4 +134,12 @@ export function migrate(db) {
   const cols = db.prepare('PRAGMA table_info(cards)').all().map((c) => c.name);
   if (!cols.includes('issuer_id')) db.exec('ALTER TABLE cards ADD COLUMN issuer_id INTEGER REFERENCES issuers(id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_cards_issuer ON cards(issuer_id)');
+
+  const version = db.prepare('PRAGMA user_version').get().user_version;
+  if (version < 1) {
+    // v1: 법인-PG 연결 도입 → 기존 거래내역에 입력된 PG로 1회 자동 채움
+    db.exec(`INSERT OR IGNORE INTO corporation_pgs (corporation_id, pg_id)
+      SELECT DISTINCT corporation_id, pg_id FROM tx_records WHERE pg_id IS NOT NULL`);
+    db.exec('PRAGMA user_version = 1');
+  }
 }

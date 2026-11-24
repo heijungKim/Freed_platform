@@ -370,3 +370,12 @@ input:disabled { background: var(--surface-2); color: var(--muted); }
 .cover.warn { color: var(--red); }
 .issuer-all { justify-content: center; align-items: flex-start; }
 .issuer-all .big { font-size: 20px; font-weight: 700; }
+
+/* ---------- PG chips ---------- */
+.pg-chips { display: flex; gap: 4px; flex-wrap: wrap; white-space: normal; max-width: 220px; }
+.pg-chip { font-size: 12px; background: var(--gray-soft); color: var(--gray); border-radius: 6px; padding: 1px 8px; white-space: nowrap; }
+.check-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.check-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px; user-select: none; background: var(--surface); }
+.check-chip input { width: 15px; height: 15px; margin: 0; accent-color: var(--primary); }
+.check-chip.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); font-weight: 500; }
+.check-chip.muted-chip { color: var(--muted); }

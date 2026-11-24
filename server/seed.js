@@ -140,6 +140,10 @@ export function seedDemo() {
       INSERT INTO tx_records (record_date, corporation_id, pg_id, tx_count, total_amount, memo, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)`);
     const scale = [1.6, 1.2, 0.8, 1.0, 0.6]; // 법인별 규모 차이
+    // 법인별 사용 PG (1~2곳)
+    const corpPgs = corpIds.map((_, ci) => (ci % 2 === 0
+      ? [pgRows[ci % pgRows.length], pgRows[(ci + 1) % pgRows.length]]
+      : [pgRows[ci % pgRows.length]]));
     for (let day = 89; day >= 0; day--) {
       const d = new Date(now);
       d.setDate(d.getDate() - day);
@@ -147,9 +151,14 @@ export function seedDemo() {
         if (rand(1, 100) > 45) return;
         const count = Math.max(1, Math.round(rand(3, 40) * scale[ci]));
         const amount = count * rand(8, 60) * 1000;
-        recIns.run(fmtDate(d), corpId, choice(pgRows).id, count, amount, null, `${fmtDate(d)} 18:00:00`);
+        recIns.run(fmtDate(d), corpId, choice(corpPgs[ci]).id, count, amount, null, `${fmtDate(d)} 18:00:00`);
       });
     }
+
+    // 법인-PG 연결 (거래내역에 입력된 PG + 비활성 법인도 1곳 연결)
+    db.exec(`INSERT OR IGNORE INTO corporation_pgs (corporation_id, pg_id)
+      SELECT DISTINCT corporation_id, pg_id FROM tx_records WHERE pg_id IS NOT NULL`);
+    db.prepare('INSERT OR IGNORE INTO corporation_pgs (corporation_id, pg_id) VALUES (?, ?)').run(corpIds[5], pgRows[3].id);
 
     // 데모용 일반 사용자(로그인 불가) & 관리자 — 공개 배포 시에는 SEED_DEMO_USERS=false 로 생성하지 않음
     if (process.env.SEED_DEMO_USERS === 'false') return;

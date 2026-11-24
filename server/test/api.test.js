@@ -144,6 +144,23 @@ test('거래내역 수동 입력 / 법인별 합계 / 수정 / 삭제', async ()
   assert.equal((await call('GET', `/records?from=2030-01-01&to=2030-01-31&corporation_id=${corp.id}`)).body.total, 1);
 });
 
+test('법인 사용 PG', async () => {
+  const corp = (await call('GET', '/corporations?f_name=' + encodeURIComponent('테스트법인'))).body.rows[0];
+  const pgs = (await call('GET', '/pgs/options')).body;
+  const upd = await call('PUT', `/corporations/${corp.id}`, { pg_ids: [pgs[0].id, pgs[1].id, pgs[0].id] });
+  assert.equal(upd.status, 200);
+  assert.equal(upd.body.pg_ids.split(',').length, 2);
+  const listed = (await call('GET', '/corporations?f_pg_names=' + encodeURIComponent(pgs[1].name))).body.rows.map((r) => r.id);
+  assert.ok(listed.includes(corp.id));
+  const usage = (await call('GET', `/corporations/${corp.id}/pg-usage`)).body;
+  assert.ok(usage.filter((u) => u.linked).length === 2);
+  assert.equal((await call('PUT', `/corporations/${corp.id}`, { pg_ids: [999999] })).status, 404);
+  const cleared = await call('PUT', `/corporations/${corp.id}`, { pg_ids: [] });
+  assert.equal(cleared.body.pg_ids, null);
+  const pgList = (await call('GET', '/pgs?size=100')).body.rows;
+  assert.ok(pgList.every((p) => typeof p.corporation_count === 'number'));
+});
+
 test('집계 API', async () => {
   const r = await call('GET', '/stats/summary');
   assert.equal(r.status, 200);

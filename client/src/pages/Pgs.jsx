@@ -40,6 +40,7 @@ export default function Pgs() {
     { key: 'mid', filter: true, label: 'MID' },
     { key: 'fee_rate', filter: true, label: '수수료율', align: 'right', render: (r) => `${r.fee_rate}%` },
     { key: 'settlement_cycle', filter: true, label: '정산주기' },
+    { key: 'corporation_count', filter: true, label: '사용 법인', align: 'right', render: (r) => `${num(r.corporation_count)}곳` },
     { key: 'tx_count', filter: true, label: '누적 거래건수', align: 'right', render: (r) => num(r.tx_count) },
     { key: 'payment_amount', filter: true, label: '누적 거래금액', align: 'right', render: (r) => won(r.payment_amount) },
     { key: 'manager_name', filter: true, label: '담당자' },

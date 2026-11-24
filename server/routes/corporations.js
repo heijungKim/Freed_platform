@@ -1,15 +1,18 @@
 import { Router } from 'express';
-import { db } from '../db.js';
+import { db, tx } from '../db.js';
 import { pick, requireFields, oneOf, paging, insertSql, updateSql, wrap, notFound, bad, columnFilters } from '../util.js';
 
 const router = Router();
 const FIELDS = ['name', 'biz_no', 'ceo_name', 'phone', 'email', 'address', 'contract_date', 'status', 'memo'];
 const CARD_COUNT = '(SELECT COUNT(*) FROM cards WHERE corporation_id = c.id)';
 const CARD_BALANCE = '(SELECT COALESCE(SUM(balance),0) FROM cards WHERE corporation_id = c.id)';
+const PG_NAMES = `(SELECT GROUP_CONCAT(name, ', ') FROM (SELECT p.name FROM corporation_pgs cp JOIN pgs p ON p.id = cp.pg_id
+  WHERE cp.corporation_id = c.id ORDER BY p.name))`;
+const PG_IDS = '(SELECT GROUP_CONCAT(pg_id) FROM corporation_pgs WHERE corporation_id = c.id)';
 const COLUMN_FILTERS = {
   id: { sql: 'c.id', num: true }, name: 'c.name', biz_no: 'c.biz_no', ceo_name: 'c.ceo_name', phone: 'c.phone',
   card_count: { sql: CARD_COUNT, num: true }, total_balance: { sql: CARD_BALANCE, num: true },
-  contract_date: 'c.contract_date', status: { sql: 'c.status', exact: true },
+  contract_date: 'c.contract_date', status: { sql: 'c.status', exact: true }, pg_names: PG_NAMES,
 };
 const BIZ_NO_RE = /^\d{3}-\d{2}-\d{5}$/;
 
@@ -33,7 +36,7 @@ router.get('/', wrap((req, res) => {
   const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const total = db.prepare(`SELECT COUNT(*) n FROM corporations c ${w}`).get(...params).n;
   const rows = db.prepare(`
-    SELECT c.*, ${CARD_COUNT} AS card_count, ${CARD_BALANCE} AS total_balance
+    SELECT c.*, ${CARD_COUNT} AS card_count, ${CARD_BALANCE} AS total_balance, ${PG_NAMES} AS pg_names, ${PG_IDS} AS pg_ids
     FROM corporations c ${w} ORDER BY c.id DESC LIMIT ? OFFSET ?`).all(...params, size, offset);
   res.json({ rows, total, page, size });
 }));
@@ -42,10 +45,42 @@ router.get('/options', (req, res) => {
   res.json(db.prepare(`SELECT c.id, c.name, c.status, ${CARD_COUNT} AS card_count FROM corporations c ORDER BY c.name`).all());
 });
 
+const getOne = (id) => db.prepare(`SELECT c.*, ${PG_NAMES} AS pg_names, ${PG_IDS} AS pg_ids FROM corporations c WHERE c.id = ?`).get(id);
+
+/** 사용 PG 저장 (전체 교체) */
+function savePgs(corpId, pgIds) {
+  if (pgIds === undefined) return;
+  const ids = [...new Set((Array.isArray(pgIds) ? pgIds : String(pgIds || '').split(','))
+    .map((v) => Number(v)).filter((v) => Number.isInteger(v) && v > 0))];
+  for (const id of ids) if (!db.prepare('SELECT 1 FROM pgs WHERE id = ?').get(id)) throw notFound('PG');
+  tx(() => {
+    db.prepare('DELETE FROM corporation_pgs WHERE corporation_id = ?').run(corpId);
+    const ins = db.prepare('INSERT INTO corporation_pgs (corporation_id, pg_id) VALUES (?, ?)');
+    for (const id of ids) ins.run(corpId, id);
+  });
+}
+
 router.get('/:id', wrap((req, res) => {
-  const row = db.prepare('SELECT * FROM corporations WHERE id = ?').get(req.params.id);
+  const row = getOne(req.params.id);
   if (!row) throw notFound('법인');
   res.json(row);
+}));
+
+/** 법인의 PG별 사용 현황: 사용 PG로 지정됐거나 거래내역이 있는 PG */
+router.get('/:id/pg-usage', wrap((req, res) => {
+  const id = Number(req.params.id);
+  if (!db.prepare('SELECT 1 FROM corporations WHERE id = ?').get(id)) throw notFound('법인');
+  const rows = db.prepare(`
+    SELECT p.id, p.name, p.code, p.mid, p.fee_rate, p.settlement_cycle, p.status,
+      EXISTS (SELECT 1 FROM corporation_pgs WHERE corporation_id = ? AND pg_id = p.id) AS linked,
+      COALESCE(SUM(r.tx_count),0) AS tx_count, COALESCE(SUM(r.total_amount),0) AS total_amount,
+      MAX(r.record_date) AS last_date
+    FROM pgs p
+    LEFT JOIN tx_records r ON r.pg_id = p.id AND r.corporation_id = ?
+    GROUP BY p.id
+    HAVING linked OR COUNT(r.id) > 0
+    ORDER BY linked DESC, total_amount DESC`).all(id, id);
+  res.json(rows);
 }));
 
 router.post('/', wrap((req, res) => {
@@ -54,7 +89,8 @@ router.post('/', wrap((req, res) => {
   if (db.prepare('SELECT 1 FROM corporations WHERE biz_no = ?').get(data.biz_no)) throw bad('이미 등록된 사업자등록번호입니다.');
   const { sql, params } = insertSql('corporations', data);
   const r = db.prepare(sql).run(...params);
-  res.status(201).json(db.prepare('SELECT * FROM corporations WHERE id = ?').get(r.lastInsertRowid));
+  savePgs(Number(r.lastInsertRowid), req.body.pg_ids);
+  res.status(201).json(getOne(r.lastInsertRowid));
 }));
 
 router.put('/:id', wrap((req, res) => {
@@ -69,7 +105,8 @@ router.put('/:id', wrap((req, res) => {
     const { sql, params } = updateSql('corporations', data, id);
     db.prepare(sql).run(...params);
   }
-  res.json(db.prepare('SELECT * FROM corporations WHERE id = ?').get(id));
+  savePgs(id, req.body.pg_ids);
+  res.json(getOne(id));
 }));
 
 router.delete('/:id', wrap((req, res) => {

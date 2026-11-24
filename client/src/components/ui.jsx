@@ -71,11 +71,13 @@ export function FormModal({ title, fields, initial = {}, onSubmit, onClose, subm
     >
       <form id="form-modal" className="form-grid" onSubmit={submit}>
         {fields.map((f) => (
-          <label key={f.name} className={`field ${f.full || f.type === 'textarea' ? 'full' : ''}`}>
-            <span className="field-label">{f.label}{f.required && <em>*</em>}</span>
-            <Input field={f} value={values[f.name]} onChange={(v) => setValues((s) => ({ ...s, [f.name]: v }))} />
-            {f.hint && <small className="hint">{f.hint}</small>}
-          </label>
+          React.createElement(
+            f.type === 'checks' ? 'div' : 'label',
+            { key: f.name, className: `field ${f.full || f.type === 'textarea' || f.type === 'checks' ? 'full' : ''}` },
+            <span className="field-label">{f.label}{f.required && <em>*</em>}</span>,
+            <Input field={f} value={values[f.name]} onChange={(v) => setValues((s) => ({ ...s, [f.name]: v }))} />,
+            f.hint && <small className="hint">{f.hint}</small>,
+          )
         ))}
         {error && <div className="form-error full">{error}</div>}
       </form>
@@ -96,6 +98,28 @@ function Input({ field: f, value, onChange }) {
     );
   }
   if (f.type === 'textarea') return <textarea rows={3} {...common} onChange={(e) => onChange(e.target.value)} />;
+  if (f.type === 'checks') {
+    const selected = new Set((Array.isArray(value) ? value : []).map(String));
+    const toggle = (v) => {
+      const next = new Set(selected);
+      if (next.has(v)) next.delete(v); else next.add(v);
+      onChange([...next]);
+    };
+    if (!f.options.length) return <span className="muted">선택할 항목이 없습니다.</span>;
+    return (
+      <div className="check-chips" role="group" aria-label={f.label}>
+        {f.options.map((o) => {
+          const v = String(o.value);
+          return (
+            <label key={v} className={`check-chip ${selected.has(v) ? 'on' : ''} ${o.muted ? 'muted-chip' : ''}`}>
+              <input type="checkbox" checked={selected.has(v)} onChange={() => toggle(v)} />
+              <span>{o.label}</span>
+            </label>
+          );
+        })}
+      </div>
+    );
+  }
   return (
     <input
       type={f.type || 'text'}
