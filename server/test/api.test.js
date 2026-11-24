@@ -198,7 +198,7 @@ test('거래내역 → 법인 카드 충전 자동 배분', async () => {
   assert.equal(al.rows.reduce((s, t) => s + t.amount, 0), 12345670);
   assert.ok(new Set(al.rows.map((t) => t.amount)).size > 10, '금액이 다양해야 함');
   assert.ok(al.rows.every((t) => t.transacted_at.startsWith('2030-02-01 ')));
-  assert.equal(al.cards.length, 4); // 모든 카드에 고르게
+  assert.ok(al.cards.length >= 1 && al.cards.length <= 4);
   assert.equal(al.record.alloc_count, 37);
   const cards = (await call('GET', `/cards?corporation_id=${corp.id}`)).body;
   assert.equal(cards.totalBalance, 12345670);
@@ -270,6 +270,33 @@ test('PG: 수수료율·정산주기 없이 등록/수정', async () => {
   assert.equal(u.body.name, '테스트PG2');
   assert.equal(u.body.fee_rate, 0);
   assert.equal((await call('DELETE', `/pgs/${r.body.id}`)).status, 200);
+});
+
+test('배분은 균등하지 않아야 함 (카드별 합계·금액 편차)', async () => {
+  const { splitAmount } = await import('../allocation.js');
+  const cv = (a) => { const m = a.reduce((s, v) => s + v, 0) / a.length; return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / a.length) / m; };
+  // 금액 편차: 30건 300만원 × 50회 평균 변동계수
+  let amtCv = 0;
+  for (let k = 0; k < 50; k++) {
+    const a = splitAmount(3_000_000, 30);
+    assert.equal(a.reduce((s, v) => s + v, 0), 3_000_000);
+    amtCv += cv(a);
+  }
+  assert.ok(amtCv / 50 > 0.5, `금액 편차가 너무 작음: ${(amtCv / 50).toFixed(2)}`);
+
+  // 카드별 합계 편차: 카드 5장 법인에 30건 × 10회
+  const issuer = (await call('GET', '/issuers/options')).body.find((i) => i.status === 'ACTIVE');
+  const corp = (await call('POST', '/corporations', { name: '편차테스트', biz_no: '333-33-33333', status: 'ACTIVE' })).body;
+  await call('POST', '/cards/bulk', { issuer_id: issuer.id, corporation_id: corp.id, quantity: 5, holder_prefix: 'D' });
+  let cardCv = 0;
+  for (let k = 0; k < 10; k++) {
+    const r = await call('POST', '/records', { record_date: '2030-03-01', items: [{ corporation_id: corp.id, tx_count: 30, total_amount: 3_000_000 }] });
+    const al = (await call('GET', `/records/${r.body.ids[0]}/allocations`)).body;
+    const per = al.corp_cards.map((c) => al.cards.find((x) => x.card_id === c.id)?.amount || 0);
+    assert.equal(per.reduce((s, v) => s + v, 0), 3_000_000);
+    cardCv += cv(per);
+  }
+  assert.ok(cardCv / 10 > 0.3, `카드별 합계가 너무 균등함: ${(cardCv / 10).toFixed(2)}`);
 });
 
 test('법인 사용 PG', async () => {

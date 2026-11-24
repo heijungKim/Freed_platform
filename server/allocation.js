@@ -3,8 +3,10 @@
  *
  * 거래건수 N, 총 금액 A 를 입력하면 해당 법인의 정상(ACTIVE) 카드들에
  * 금액이 서로 다른 충전 거래 N건을 만들어 합계가 정확히 A 가 되도록 나눈다.
- *  - 금액: 1,000원 단위(불가능하면 100원/1원 단위), 작은 금액이 많고 큰 금액이 가끔 있는 분포
- *  - 카드: 가능한 한 고르게(카드별 건수 균등) 배정, 카드 충전 한도 준수
+ * 실제 사용처럼 '균등하지 않게' 나눈다:
+ *  - 금액: 로그정규 분포(소액 다수 + 고액 일부), 100원 단위 금액도 섞임
+ *  - 카드: 카드마다 사용량 가중치를 무작위로 부여(많이 쓰는 카드/적게 쓰는 카드/미사용 카드),
+ *          가중치 비례 무작위 배정, 카드 충전 한도 준수
  *  - 시각: 거래일 09:00~21:59 사이 무작위 (오늘이면 현재 시각 이전)
  */
 import crypto from 'node:crypto';
@@ -15,6 +17,10 @@ import { bad } from './util.js';
 export const MAX_ALLOC_COUNT = 5000;
 
 const rnd = () => crypto.randomInt(0, 1_000_000) / 1_000_000;
+/** 표준정규 난수 (Box-Muller) */
+const gauss = () => Math.sqrt(-2 * Math.log(1 - rnd() * 0.999999)) * Math.cos(2 * Math.PI * rnd());
+/** 로그정규 가중치: 평균 1 근처, sigma 클수록 편차 큼 */
+const logNormal = (sigma) => Math.exp(gauss() * sigma);
 const pad = (n) => String(n).padStart(2, '0');
 
 function shuffle(a) {
@@ -25,21 +31,43 @@ function shuffle(a) {
   return a;
 }
 
-/** 합계가 정확히 total 이 되는 count 개의 서로 다른 금액 */
+/**
+ * 합계가 정확히 total 이 되는 count 개의 금액 (균등하지 않게)
+ *  - 기본 100원 단위(불가능하면 1원), 약 70%는 1,000원 단위로 반올림해 자연스럽게
+ */
 export function splitAmount(total, count) {
   if (count < 1) throw bad('거래건수는 1건 이상이어야 합니다.');
   if (total < count) throw bad(`총 금액(${total.toLocaleString()}원)은 거래건수(${count.toLocaleString()}건) 이상이어야 합니다.`);
-  const unit = total >= count * 1000 ? 1000 : total >= count * 100 ? 100 : 1;
+  const unit = total >= count * 100 ? 100 : 1;
   const units = Math.floor(total / unit);
   const leftover = total - units * unit;
 
-  // 가중치: 작은 값이 많고 큰 값이 가끔 (0.3 ~ 3.0)
-  const weights = Array.from({ length: count }, () => 0.3 + rnd() ** 2 * 2.7);
+  // 로그정규 가중치: 소액이 많고 고액이 가끔 (편차 큼)
+  const weights = Array.from({ length: count }, () => logNormal(0.85));
   const wsum = weights.reduce((s, w) => s + w, 0);
   const extra = units - count; // 각 1단위씩 먼저 배정
   const parts = weights.map((w) => 1 + Math.floor((extra * w) / wsum));
-  let remain = units - parts.reduce((s, v) => s + v, 0);
-  while (remain > 0) { parts[crypto.randomInt(0, count)] += 1; remain--; }
+  // 일부 금액은 1,000원 단위로 맞춤 (차액은 나머지로 이동)
+  const free = []; // 1,000원 단위로 맞추지 않은 금액 (차액 조정용)
+  for (let i = 0; i < count; i++) {
+    if (unit === 100 && rnd() < 0.7 && parts[i] >= 10) parts[i] = Math.max(10, Math.round(parts[i] / 10) * 10);
+    else free.push(i);
+  }
+  if (!free.length) free.push(crypto.randomInt(0, count));
+  let diff = units - parts.reduce((s, v) => s + v, 0);
+  // 차액 조정: 우선 단위를 맞추지 않은 금액에서, 1단위 미만으로 내려가지 않게
+  let guard = 0;
+  while (diff !== 0 && guard++ < 1_000_000) {
+    const pool = guard > 10_000 ? null : free; // 조정이 오래 걸리면 전체에서
+    const i = pool ? pool[crypto.randomInt(0, pool.length)] : crypto.randomInt(0, count);
+    if (diff > 0) {
+      const add = Math.min(diff, 1 + crypto.randomInt(0, Math.max(1, Math.ceil(diff / count))));
+      parts[i] += add; diff -= add;
+    } else if (parts[i] > 1) {
+      const sub = Math.min(-diff, parts[i] - 1, 1 + crypto.randomInt(0, Math.max(1, Math.ceil(-diff / count))));
+      parts[i] -= sub; diff += sub;
+    }
+  }
 
   const amounts = parts.map((p) => p * unit);
   if (leftover) {
@@ -74,7 +102,7 @@ export function allocateRecord(record, userId) {
 
   const cards = db.prepare("SELECT id, balance, limit_amount FROM cards WHERE corporation_id = ? AND status = 'ACTIVE'")
     .all(record.corporation_id)
-    .map((c) => ({ id: c.id, room: c.limit_amount > 0 ? Math.max(0, c.limit_amount - c.balance) : Infinity, n: 0, r: rnd() }));
+    .map((c) => ({ id: c.id, room: c.limit_amount > 0 ? Math.max(0, c.limit_amount - c.balance) : Infinity, n: 0, w: logNormal(1.1) }));
   if (!cards.length) throw bad(`${corpName}: 정상 상태의 발급 카드가 없어 배분할 수 없습니다. 먼저 카드를 발급하세요.`);
   const capacity = cards.reduce((s, c) => s + c.room, 0);
   if (capacity < total) {
@@ -82,20 +110,29 @@ export function allocateRecord(record, userId) {
   }
 
   const amounts = splitAmount(total, count);
-  // 큰 금액부터 한도 여유가 있는 카드 중 배정 건수가 가장 적은 카드에
+  // 카드 사용량 가중치: 카드가 4장 이상이면 일부(약 20%)는 이번 배분에서 쉬게 함
+  if (cards.length >= 4) {
+    for (const c of cards) if (rnd() < 0.2) c.w = 0;
+    if (!cards.some((c) => c.w > 0)) cards[crypto.randomInt(0, cards.length)].w = 1;
+  }
+  const pick = (list) => {
+    const sumW = list.reduce((s, c) => s + c.w, 0);
+    if (sumW <= 0) return list[crypto.randomInt(0, list.length)];
+    let x = rnd() * sumW;
+    for (const c of list) { x -= c.w; if (x <= 0) return c; }
+    return list[list.length - 1];
+  };
+  // 큰 금액부터, 한도 여유가 있는 카드 중 가중치 비례 무작위 (쉬는 카드는 다른 카드에 여유가 없을 때만)
   const order = amounts.map((a, i) => i).sort((a, b) => amounts[b] - amounts[a]);
   const assign = new Array(count);
   for (const i of order) {
-    let best = null;
-    for (const c of cards) {
-      if (c.room < amounts[i]) continue;
-      if (!best || c.n < best.n || (c.n === best.n && c.r < best.r)) best = c;
-    }
-    if (!best) throw bad(`${corpName}: 카드별 충전 한도 때문에 ${amounts[i].toLocaleString()}원을 배정할 카드가 없습니다.`);
-    best.room -= amounts[i];
-    best.n += 1;
-    best.r = rnd();
-    assign[i] = best.id;
+    const fit = cards.filter((c) => c.room >= amounts[i]);
+    if (!fit.length) throw bad(`${corpName}: 카드별 충전 한도 때문에 ${amounts[i].toLocaleString()}원을 배정할 카드가 없습니다.`);
+    const active = fit.filter((c) => c.w > 0);
+    const c = pick(active.length ? active : fit);
+    c.room -= amounts[i];
+    c.n += 1;
+    assign[i] = c.id;
   }
 
   const idx = shuffle(amounts.map((_, i) => i));
