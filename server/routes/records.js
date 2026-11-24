@@ -5,7 +5,7 @@
 import { Router } from 'express';
 import { db, tx } from '../db.js';
 import { paging, wrap, notFound, bad, dateParam, csvEscape, columnFilters, toInt } from '../util.js';
-import { allocateRecord, revertAllocation } from '../allocation.js';
+import { allocateRecord, revertAllocation, addAllocation, updateAllocation, removeAllocation } from '../allocation.js';
 
 const router = Router();
 
@@ -151,7 +151,7 @@ router.get('/:id/allocations', wrap((req, res) => {
   const record = db.prepare(`${SELECT} WHERE r.id = ?`).get(id);
   if (!record) throw notFound('거래내역');
   const rows = db.prepare(`
-    SELECT t.id, t.card_id, t.amount, t.transacted_at, t.approval_no, k.card_no, k.holder_name, i.name AS issuer_name
+    SELECT t.id, t.card_id, t.amount, t.transacted_at, t.approval_no, t.memo, k.card_no, k.holder_name, i.name AS issuer_name
     FROM transactions t JOIN cards k ON k.id = t.card_id LEFT JOIN issuers i ON i.id = k.issuer_id
     WHERE t.record_id = ? AND t.status = 'APPROVED' ORDER BY t.transacted_at, t.id`).all(id);
   const byCard = new Map();
@@ -161,7 +161,35 @@ router.get('/:id/allocations', wrap((req, res) => {
     c.amount += t.amount;
     byCard.set(t.card_id, c);
   }
-  res.json({ record, rows, cards: [...byCard.values()].sort((a, b) => b.amount - a.amount) });
+  const corpCards = db.prepare(`SELECT k.id, k.card_no, k.holder_name, k.balance, k.limit_amount, k.status
+    FROM cards k WHERE k.corporation_id = ? ORDER BY k.status = 'ACTIVE' DESC, k.id`).all(record.corporation_id);
+  res.json({ record, rows, cards: [...byCard.values()].sort((a, b) => b.amount - a.amount), corp_cards: corpCards });
+}));
+
+/** 배분 충전 개별 편집 — 입력의 거래건수/총 금액이 배분 합계로 자동 갱신됨 */
+function loadRecord(id) {
+  const r = db.prepare('SELECT * FROM tx_records WHERE id = ?').get(Number(id));
+  if (!r) throw notFound('거래내역');
+  return r;
+}
+const recordOut = (id) => db.prepare(`${SELECT} WHERE r.id = ?`).get(id);
+
+router.post('/:id/allocations', wrap((req, res) => {
+  const rec = loadRecord(req.params.id);
+  tx(() => addAllocation(rec, req.body || {}, req.user.id));
+  res.status(201).json(recordOut(rec.id));
+}));
+
+router.put('/:id/allocations/:txId', wrap((req, res) => {
+  const rec = loadRecord(req.params.id);
+  tx(() => updateAllocation(rec, Number(req.params.txId), req.body || {}));
+  res.json(recordOut(rec.id));
+}));
+
+router.delete('/:id/allocations/:txId', wrap((req, res) => {
+  const rec = loadRecord(req.params.id);
+  tx(() => removeAllocation(rec, Number(req.params.txId)));
+  res.json(recordOut(rec.id));
 }));
 
 router.put('/:id', wrap((req, res) => {

@@ -147,6 +147,7 @@ function CorpSummary({ rows, summary, loading, onOpen }) {
           { key: 'last_date', label: '최근 거래일', filter: true, render: (r) => r.last_date || '-' },
         ]}
       />
+      <p className="table-hint">법인을 누르면 날짜별 입력 내역이 열리고, 각 입력을 수정·삭제할 수 있습니다. 전체 입력은 &apos;입력 내역&apos; 탭에서 볼 수 있습니다.</p>
       <div className="total-row">
         <span>합계</span>
         <span><b>{num(summary.tx_count)}</b>건</span>
@@ -184,12 +185,13 @@ function RecordList({ range, pgs, corps, version, onChanged, corporationId, comp
 
   const remove = async (r) => {
     const extra = r.alloc_count ? `\n카드에 배분된 충전 ${num(r.alloc_count)}건(${won(r.alloc_amount)})도 함께 취소되고 카드 잔액이 차감됩니다.` : '';
-    if (!(await confirm(`${r.record_date} ${r.corporation_name} 입력(${num(r.tx_count)}건 / ${won(r.total_amount)})을 삭제할까요?${extra}`, { danger: true, okLabel: '삭제' }))) return;
+    if (!(await confirm(`${r.record_date} ${r.corporation_name} 입력(${num(r.tx_count)}건 / ${won(r.total_amount)})을 삭제할까요?${extra}`, { danger: true, okLabel: '삭제' }))) return false;
     try {
       await api.del(`/records/${r.id}`);
       toast('삭제되었습니다.');
       onChanged();
-    } catch (e) { toast(e.message, 'error'); }
+      return true;
+    } catch (e) { toast(e.message, 'error'); return false; }
   };
 
   const columns = [
@@ -219,10 +221,18 @@ function RecordList({ range, pgs, corps, version, onChanged, corporationId, comp
         colFilters={list.colFilters}
         onColFilter={list.onColFilter}
         onRowClick={setViewing}
-        rowTitle="클릭하여 카드 배분 내역 보기"
+        rowTitle="클릭하여 상세 보기 · 수정 · 삭제"
         empty="해당 기간에 입력된 거래내역이 없습니다."
       />
-      {viewing && <AllocationModal record={viewing} onClose={() => setViewing(null)} />}
+      {viewing && (
+        <AllocationModal
+          record={viewing}
+          onClose={() => setViewing(null)}
+          onEdit={(r) => { setViewing(null); setEditing(r); }}
+          onDelete={async (r) => { if (await remove(r)) setViewing(null); }}
+          onChanged={onChanged}
+        />
+      )}
       <div className="total-row">
         <span>조회 합계 ({num(list.data.total)}회 입력)</span>
         <span><b>{num(sum.tx_count)}</b>건</span>
@@ -428,64 +438,133 @@ function LineInfo({ corp, line }) {
   );
 }
 
-/** 거래내역 1건의 카드 배분 내역 */
-function AllocationModal({ record, onClose }) {
+/** 거래내역 1건 상세: 배분된 충전 조회·추가·수정·삭제 + 입력 수정/삭제 */
+function AllocationModal({ record: initial, onClose, onEdit, onDelete, onChanged }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
-  const [view, setView] = useState('card');
-  useEffect(() => {
-    api.get(`/records/${record.id}/allocations`).then(setData).catch((e) => setError(e.message));
-  }, [record.id]);
+  const [view, setView] = useState('tx');
+  const [editing, setEditing] = useState(null); // null | {} (추가) | tx (수정)
+  const confirm = useConfirm();
+  const toast = useToast();
+
+  const load = useCallback(() => {
+    api.get(`/records/${initial.id}/allocations`).then((d) => { setData(d); setError(''); }).catch((e) => setError(e.message));
+  }, [initial.id]);
+  useEffect(() => { load(); }, [load]);
+
+  const record = data?.record || initial;
   const rows = data?.rows || [];
   const sum = rows.reduce((s, t) => s + t.amount, 0);
   const amounts = rows.map((t) => t.amount);
   const ok = data && rows.length === record.tx_count && sum === record.total_amount;
+  const activeCards = (data?.corp_cards || []).filter((c) => c.status === 'ACTIVE');
+  const changed = (msg) => { toast(msg); load(); onChanged(); };
+
+  const removeTx = async (t) => {
+    if (!(await confirm(`${t.transacted_at} ${fmtCard(t.card_no)} 충전 ${won(t.amount)}을 삭제할까요?\n카드 잔액이 차감되고, 입력의 거래건수·총 금액이 함께 줄어듭니다.`, { danger: true, okLabel: '삭제' }))) return;
+    try {
+      await api.del(`/records/${record.id}/allocations/${t.id}`);
+      changed('충전 거래가 삭제되었습니다.');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
   return (
-    <Modal title={`카드 배분 내역 · ${record.record_date} ${record.corporation_name}`} width={860} onClose={onClose}
-      footer={<button className="btn" onClick={onClose}>닫기</button>}
+    <Modal
+      title={`거래내역 상세 · ${record.record_date} ${record.corporation_name}`}
+      width={900}
+      onClose={onClose}
+      footer={(
+        <>
+          <div className="foot-left">
+            <button className="btn btn-ghost-danger" onClick={() => onDelete(record)}>입력 삭제</button>
+          </div>
+          <button className="btn" onClick={() => onEdit(record)}>입력 수정</button>
+          <button className="btn btn-primary" onClick={onClose}>닫기</button>
+        </>
+      )}
     >
       {error && <div className="alert">{error}</div>}
       <div className="stat-grid" style={{ marginBottom: 12 }}>
-        <StatCard label="입력" value={`${num(record.tx_count)}건`} sub={won(record.total_amount)} />
+        <StatCard label="입력" value={`${num(record.tx_count)}건`} sub={`${won(record.total_amount)}${record.pg_name ? ` · ${record.pg_name}` : ''}`} />
         <StatCard label="배분 결과" value={`${num(rows.length)}건`} sub={won(sum)} tone={data ? (ok ? 'green' : 'amber') : undefined} />
         <StatCard label="배분 카드" value={`${num(data?.cards.length || 0)}장`} />
         <StatCard label="건당 평균" value={rows.length ? won(Math.round(sum / rows.length)) : '-'}
           sub={rows.length ? `최소 ${won(Math.min(...amounts))} · 최대 ${won(Math.max(...amounts))}` : null} />
       </div>
-      {data && !rows.length && <div className="alert alert-info">이 입력은 카드에 배분되지 않았습니다. (수정에서 &apos;자동 배분&apos;을 선택하면 배분됩니다)</div>}
+      {data && !rows.length && (
+        <div className="alert alert-info">
+          이 입력은 카드에 배분되지 않았습니다. &apos;입력 수정&apos;에서 자동 배분을 선택하거나, 아래 &apos;충전 추가&apos;로 직접 넣을 수 있습니다.
+        </div>
+      )}
       {data && rows.length > 0 && !ok && <div className="alert">입력값과 배분 결과가 다릅니다.</div>}
-      {rows.length > 0 && (
-        <>
-          <div className="seg" style={{ marginBottom: 10 }}>
-            <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}>카드별 합계</button>
-            <button className={view === 'tx' ? 'on' : ''} onClick={() => setView('tx')}>충전 거래 {num(rows.length)}건</button>
-          </div>
-          <div className="modal-section" style={{ marginTop: 0, borderTop: 0, paddingTop: 0 }}>
-            {view === 'card' ? (
-              <DataTable
-                rows={data.cards.map((c) => ({ ...c, id: c.card_id }))}
-                columns={[
-                  { key: 'card_no', label: '카드번호', filter: true, render: (c) => <span className="mono">{fmtCard(c.card_no)}</span> },
-                  { key: 'holder_name', label: '사용자', filter: true },
-                  { key: 'issuer_name', label: '선불사업자', render: (c) => c.issuer_name || '-' },
-                  { key: 'count', label: '충전 건수', align: 'right', render: (c) => `${num(c.count)}건` },
-                  { key: 'amount', label: '충전 금액', align: 'right', render: (c) => <strong>{won(c.amount)}</strong> },
-                ]}
-              />
-            ) : (
-              <DataTable
-                rows={rows}
-                columns={[
-                  { key: 'transacted_at', label: '일시', filter: true },
-                  { key: 'approval_no', label: '승인번호', render: (t) => <code>{t.approval_no}</code> },
-                  { key: 'card_no', label: '카드번호', filter: true, render: (t) => <span className="mono">{fmtCard(t.card_no)}</span> },
-                  { key: 'holder_name', label: '사용자', filter: true },
-                  { key: 'amount', label: '충전 금액', align: 'right', filter: true, render: (t) => won(t.amount) },
-                ]}
-              />
-            )}
-          </div>
-        </>
+
+      <div className="modal-section-head">
+        <div className="seg">
+          <button className={view === 'tx' ? 'on' : ''} onClick={() => setView('tx')}>충전 거래 {num(rows.length)}건</button>
+          <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}>카드별 합계</button>
+        </div>
+        <button className="btn btn-sm btn-primary-soft" disabled={!activeCards.length} onClick={() => setEditing({})}
+          title={activeCards.length ? undefined : '정상 카드가 없습니다'}>+ 충전 추가</button>
+      </div>
+      <div className="modal-section" style={{ marginTop: 0, borderTop: 0, paddingTop: 0 }}>
+        {view === 'card' ? (
+          <DataTable
+            loading={!data}
+            rows={(data?.cards || []).map((c) => ({ ...c, id: c.card_id }))}
+            empty="배분된 카드가 없습니다."
+            columns={[
+              { key: 'card_no', label: '카드번호', filter: true, render: (c) => <span className="mono">{fmtCard(c.card_no)}</span> },
+              { key: 'holder_name', label: '사용자', filter: true },
+              { key: 'issuer_name', label: '선불사업자', render: (c) => c.issuer_name || '-' },
+              { key: 'count', label: '충전 건수', align: 'right', render: (c) => `${num(c.count)}건` },
+              { key: 'amount', label: '충전 금액', align: 'right', render: (c) => <strong>{won(c.amount)}</strong> },
+            ]}
+          />
+        ) : (
+          <DataTable
+            loading={!data}
+            rows={rows}
+            empty="배분된 충전 거래가 없습니다."
+            columns={[
+              { key: 'transacted_at', label: '일시', filter: true },
+              { key: 'card_no', label: '카드번호', filter: true, render: (t) => <span className="mono">{fmtCard(t.card_no)}</span> },
+              { key: 'holder_name', label: '사용자', filter: true },
+              { key: 'amount', label: '충전 금액', align: 'right', filter: true, render: (t) => <strong>{won(t.amount)}</strong> },
+              { key: 'memo', label: '비고', render: (t) => (/수정됨|수동 추가/.test(t.memo || '') ? <span className="badge badge-amber">{t.memo.includes('수정됨') ? '수정됨' : '수동 추가'}</span> : '') },
+              { key: 'actions', label: '', align: 'right', render: (t) => (
+                <div className="row-actions">
+                  <button className="btn btn-sm" onClick={() => setEditing(t)}>수정</button>
+                  <button className="btn btn-sm btn-ghost-danger" onClick={() => removeTx(t)}>삭제</button>
+                </div>
+              ) },
+            ]}
+          />
+        )}
+      </div>
+      <p className="muted" style={{ fontSize: 12.5, margin: '10px 0 0' }}>
+        충전 거래를 추가·수정·삭제하면 입력의 거래건수와 총 금액이 배분 합계에 맞게 자동으로 바뀝니다.
+      </p>
+
+      {editing && (
+        <FormModal
+          title={editing.id ? `충전 수정 · ${editing.transacted_at}` : '충전 추가'}
+          submitLabel={editing.id ? '저장' : '추가'}
+          initial={editing.id ? { card_id: editing.card_id, amount: editing.amount } : { card_id: activeCards[0]?.id ?? '' }}
+          fields={[
+            { name: 'card_id', label: '카드', type: 'select', required: true, full: true,
+              options: (data?.corp_cards || [])
+                .filter((c) => c.status === 'ACTIVE' || c.id === editing.card_id)
+                .map((c) => ({ value: c.id, label: `${fmtCard(c.card_no)} · ${c.holder_name} · 잔액 ${won(c.balance)}${c.limit_amount ? ` / 한도 ${won(c.limit_amount)}` : ''}` })) },
+            { name: 'amount', label: '충전 금액 (원)', type: 'number', min: '1', required: true, full: true },
+          ]}
+          onClose={() => setEditing(null)}
+          onSubmit={async (v) => {
+            if (editing.id) await api.put(`/records/${record.id}/allocations/${editing.id}`, v);
+            else await api.post(`/records/${record.id}/allocations`, v);
+            setEditing(null);
+            changed(editing.id ? '충전 거래가 수정되었습니다.' : '충전 거래가 추가되었습니다.');
+          }}
+        />
       )}
     </Modal>
   );

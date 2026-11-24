@@ -125,3 +125,84 @@ export function revertAllocation(recordId) {
   db.prepare("UPDATE transactions SET status = 'CANCELLED' WHERE record_id = ? AND status = 'APPROVED'").run(recordId);
   return txs.length;
 }
+
+/* ---------- 배분된 충전 개별 수정 ---------- */
+
+/** 입력의 거래건수/총 금액을 현재 배분 합계로 맞춘다 */
+export function syncRecordTotals(recordId) {
+  const s = db.prepare(`SELECT COUNT(*) n, COALESCE(SUM(amount),0) a FROM transactions
+    WHERE record_id = ? AND status = 'APPROVED'`).get(recordId);
+  db.prepare("UPDATE tx_records SET tx_count = ?, total_amount = ?, updated_at = datetime('now','localtime') WHERE id = ?")
+    .run(s.n, s.a, recordId);
+  return { tx_count: s.n, total_amount: s.a };
+}
+
+function loadCard(cardId, corporationId) {
+  const card = db.prepare('SELECT * FROM cards WHERE id = ?').get(cardId);
+  if (!card) throw bad('카드를 찾을 수 없습니다.');
+  if (card.corporation_id !== corporationId) throw bad('이 법인에 발급된 카드만 선택할 수 있습니다.');
+  return card;
+}
+
+function checkRoom(card, add) {
+  if (card.limit_amount > 0 && card.balance + add > card.limit_amount) {
+    throw bad(`카드 ${card.card_no.slice(-4)}의 충전 한도(${card.limit_amount.toLocaleString()}원)를 초과합니다. (현재 잔액 ${card.balance.toLocaleString()}원)`);
+  }
+}
+
+function getAllocTx(recordId, txId) {
+  const t = db.prepare("SELECT * FROM transactions WHERE id = ? AND record_id = ? AND status = 'APPROVED'").get(txId, recordId);
+  if (!t) throw bad('배분된 충전 거래를 찾을 수 없습니다.');
+  return t;
+}
+
+/** 충전 1건 추가 */
+export function addAllocation(record, { card_id, amount, transacted_at }, userId) {
+  const amt = Number(amount);
+  if (!Number.isInteger(amt) || amt < 1) throw bad('금액은 1원 이상의 정수여야 합니다.');
+  const card = loadCard(Number(card_id), record.corporation_id);
+  if (card.status !== 'ACTIVE') throw bad('정상 상태의 카드에만 충전할 수 있습니다.');
+  checkRoom(card, amt);
+  const time = transacted_at || randomTimes(record.record_date, 1)[0];
+  applyTransaction({
+    card_id: card.id, pg_id: record.pg_id || null, type: 'CHARGE', amount: amt,
+    memo: `거래내역 #${record.id} 배분 (수동 추가)`, transacted_at: time, created_by: userId, record_id: record.id,
+  });
+  return syncRecordTotals(record.id);
+}
+
+/** 충전 1건 수정: 금액 / 카드 변경 */
+export function updateAllocation(record, txId, { card_id, amount }) {
+  const t = getAllocTx(record.id, txId);
+  const amt = amount === undefined || amount === '' ? t.amount : Number(amount);
+  if (!Number.isInteger(amt) || amt < 1) throw bad('금액은 1원 이상의 정수여야 합니다.');
+  const newCardId = card_id ? Number(card_id) : t.card_id;
+  const oldCard = loadCard(t.card_id, record.corporation_id);
+
+  if (newCardId === t.card_id) {
+    const diff = amt - t.amount;
+    if (diff < 0 && oldCard.balance < -diff) throw bad(`카드 잔액(${oldCard.balance.toLocaleString()}원)이 부족해 금액을 줄일 수 없습니다.`);
+    if (diff > 0) checkRoom(oldCard, diff);
+    db.prepare('UPDATE cards SET balance = balance + ? WHERE id = ?').run(diff, oldCard.id);
+  } else {
+    const newCard = loadCard(newCardId, record.corporation_id);
+    if (newCard.status !== 'ACTIVE') throw bad('정상 상태의 카드로만 옮길 수 있습니다.');
+    if (oldCard.balance < t.amount) throw bad(`기존 카드 잔액(${oldCard.balance.toLocaleString()}원)이 부족해 다른 카드로 옮길 수 없습니다.`);
+    checkRoom(newCard, amt);
+    db.prepare('UPDATE cards SET balance = balance - ? WHERE id = ?').run(t.amount, oldCard.id);
+    db.prepare('UPDATE cards SET balance = balance + ? WHERE id = ?').run(amt, newCard.id);
+  }
+  db.prepare("UPDATE transactions SET amount = ?, card_id = ?, memo = ? WHERE id = ?")
+    .run(amt, newCardId, `거래내역 #${record.id} 배분 (수정됨)`, t.id);
+  return syncRecordTotals(record.id);
+}
+
+/** 충전 1건 삭제(취소) */
+export function removeAllocation(record, txId) {
+  const t = getAllocTx(record.id, txId);
+  const card = db.prepare('SELECT * FROM cards WHERE id = ?').get(t.card_id);
+  if (card.balance < t.amount) throw bad(`카드 잔액(${card.balance.toLocaleString()}원)이 충전액보다 적어 삭제할 수 없습니다.`);
+  db.prepare('UPDATE cards SET balance = balance - ? WHERE id = ?').run(t.amount, card.id);
+  db.prepare("UPDATE transactions SET status = 'CANCELLED' WHERE id = ?").run(t.id);
+  return syncRecordTotals(record.id);
+}

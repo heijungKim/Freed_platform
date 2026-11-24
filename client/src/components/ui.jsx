@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { LABELS, toneOf } from '../format.js';
 
 /* ---------- Badge ---------- */
@@ -9,13 +9,22 @@ export function Badge({ value, kind = 'status' }) {
 
 /* ---------- Modal ---------- */
 export function Modal({ title, onClose, children, footer, width = 560 }) {
+  const ref = useRef(null);
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose();
+    // 팝업이 겹쳐 있으면 맨 위 팝업만 Esc 로 닫힘
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return; // 한 번의 Esc 는 한 팝업만 처리
+      const all = document.querySelectorAll('.modal-backdrop');
+      if (all[all.length - 1] === ref.current) {
+        e.preventDefault();
+        onClose();
+      }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div ref={ref} className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: width }} role="dialog" aria-modal="true">
         <div className="modal-head">
           <h3>{title}</h3>

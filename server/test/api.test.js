@@ -229,9 +229,35 @@ test('거래내역 → 법인 카드 충전 자동 배분', async () => {
   assert.equal(na.status, 201);
   assert.equal(na.body.allocated, 0);
 
+  // 배분 충전 개별 편집: 금액 수정 / 카드 이동 / 추가 / 삭제 → 입력 합계 자동 갱신
+  let al2 = (await call('GET', `/records/${recId}/allocations`)).body;
+  assert.equal(al2.corp_cards.length, 4);
+  const t0 = al2.rows[0];
+  let rec = (await call('PUT', `/records/${recId}/allocations/${t0.id}`, { amount: t0.amount + 500 })).body;
+  assert.equal(rec.total_amount, 1503);
+  assert.equal(rec.tx_count, 5);
+  const otherCard = al2.corp_cards.find((c) => c.id !== t0.card_id && !c.limit_amount);
+  rec = (await call('PUT', `/records/${recId}/allocations/${t0.id}`, { card_id: otherCard.id })).body;
+  assert.equal(rec.total_amount, 1503);
+  rec = (await call('POST', `/records/${recId}/allocations`, { card_id: otherCard.id, amount: 2000 })).body;
+  assert.equal(rec.tx_count, 6);
+  assert.equal(rec.total_amount, 3503);
+  assert.equal(rec.alloc_amount, 3503);
+  al2 = (await call('GET', `/records/${recId}/allocations`)).body;
+  rec = (await call('DELETE', `/records/${recId}/allocations/${al2.rows[1].id}`)).body;
+  assert.equal(rec.tx_count, 5);
+  assert.equal(rec.total_amount, 3503 - al2.rows[1].amount);
+  assert.equal((await call('GET', `/cards?corporation_id=${corp.id}`)).body.totalBalance, rec.total_amount);
+  // 다른 법인 카드 / 한도 초과 / 잘못된 금액 거부
+  const foreign = (await call('GET', '/cards?size=500')).body.rows.find((c) => c.corporation_id !== corp.id);
+  assert.equal((await call('POST', `/records/${recId}/allocations`, { card_id: foreign.id, amount: 1000 })).status, 400);
+  const limited = al2.corp_cards.find((c) => c.limit_amount);
+  assert.equal((await call('POST', `/records/${recId}/allocations`, { card_id: limited.id, amount: 600000 })).status, 400);
+  assert.equal((await call('PUT', `/records/${recId}/allocations/${al2.rows[0].id}`, { amount: 0 })).status, 400);
+
   // 삭제 → 배분 취소, 잔액 원복
   const del = await call('DELETE', `/records/${recId}`);
-  assert.equal(del.body.cancelled, 5);
+  assert.equal(del.body.cancelled, rec.tx_count);
   assert.equal((await call('GET', `/cards?corporation_id=${corp.id}`)).body.totalBalance, 0);
 });
 
