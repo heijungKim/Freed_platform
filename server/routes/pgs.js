@@ -3,25 +3,20 @@ import { db } from '../db.js';
 import { pick, requireFields, oneOf, paging, insertSql, updateSql, wrap, notFound, bad, columnFilters } from '../util.js';
 
 const router = Router();
-const FIELDS = ['name', 'code', 'mid', 'fee_rate', 'settlement_cycle', 'manager_name', 'manager_phone', 'status', 'memo'];
+const FIELDS = ['name', 'code', 'mid', 'manager_name', 'manager_phone', 'status', 'memo'];
 
 // 거래내역(수동 입력) 기준 누적 거래건수 / 총 금액
 const TX_COUNT = '(SELECT COALESCE(SUM(tx_count),0) FROM tx_records WHERE pg_id = p.id)';
 const PAY_SUM = '(SELECT COALESCE(SUM(total_amount),0) FROM tx_records WHERE pg_id = p.id)';
 const CORP_COUNT = '(SELECT COUNT(*) FROM corporation_pgs WHERE pg_id = p.id)';
 const COLUMN_FILTERS = {
-  id: { sql: 'p.id', num: true }, name: 'p.name', code: 'p.code', mid: 'p.mid', fee_rate: { sql: 'p.fee_rate', num: true },
-  settlement_cycle: 'p.settlement_cycle', tx_count: { sql: TX_COUNT, num: true }, payment_amount: { sql: PAY_SUM, num: true },
+  id: { sql: 'p.id', num: true }, name: 'p.name', code: 'p.code', mid: 'p.mid',
+  tx_count: { sql: TX_COUNT, num: true }, payment_amount: { sql: PAY_SUM, num: true },
   manager_name: 'p.manager_name', status: { sql: 'p.status', exact: true }, corporation_count: { sql: CORP_COUNT, num: true },
 };
 
 function validate(data, isCreate) {
-  if (isCreate) requireFields(data, { name: 'PG사명', code: 'PG 코드', fee_rate: '수수료율' });
-  if (data.fee_rate !== undefined) {
-    const r = Number(data.fee_rate);
-    if (!Number.isFinite(r) || r < 0 || r > 100) throw bad('수수료율은 0~100 사이의 숫자여야 합니다.');
-    data.fee_rate = r;
-  }
+  if (isCreate) requireFields(data, { name: 'PG사명', code: 'PG 코드' });
   if (data.code) data.code = String(data.code).toUpperCase();
   oneOf(data.status, ['ACTIVE', 'INACTIVE'], '상태');
 }
@@ -46,7 +41,7 @@ router.get('/', wrap((req, res) => {
 }));
 
 router.get('/options', (req, res) => {
-  res.json(db.prepare('SELECT id, name, code, fee_rate, status FROM pgs ORDER BY name').all());
+  res.json(db.prepare('SELECT id, name, code, mid, status FROM pgs ORDER BY name').all());
 });
 
 router.get('/:id', wrap((req, res) => {

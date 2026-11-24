@@ -76,7 +76,7 @@ router.get('/:id/pg-usage', wrap((req, res) => {
   const id = Number(req.params.id);
   if (!db.prepare('SELECT 1 FROM corporations WHERE id = ?').get(id)) throw notFound('법인');
   const rows = db.prepare(`
-    SELECT p.id, p.name, p.code, p.mid, p.fee_rate, p.settlement_cycle, p.status,
+    SELECT p.id, p.name, p.code, p.mid, p.status,
       EXISTS (SELECT 1 FROM corporation_pgs WHERE corporation_id = ? AND pg_id = p.id) AS linked,
       COALESCE(SUM(r.tx_count),0) AS tx_count, COALESCE(SUM(r.total_amount),0) AS total_amount,
       MAX(r.record_date) AS last_date

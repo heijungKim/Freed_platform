@@ -38,7 +38,7 @@ export function applyTransaction({ card_id, pg_id, type, amount, merchant_name, 
     throw bad(`충전 한도(${card.limit_amount.toLocaleString()}원)를 초과합니다.`);
   }
 
-  const fee = type === 'PAYMENT' && pg ? Math.round((amount * pg.fee_rate) / 100) : 0;
+  const fee = 0; // PG 수수료율 관리 안 함
   db.prepare('UPDATE cards SET balance = ? WHERE id = ?').run(newBalance, card.id);
   const r = db.prepare(`
     INSERT INTO transactions (card_id, corporation_id, pg_id, type, amount, fee, merchant_name, approval_no, status, memo, transacted_at, created_by, record_id)

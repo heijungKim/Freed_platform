@@ -42,16 +42,16 @@ export function seedDemo() {
     ).lastInsertRowid));
 
     const pgs = [
-      ['한빛페이먼츠', 'HANBIT', 'hanbit0001', 2.5, 'D+1'],
-      ['누리PG', 'NURIPG', 'nuri_m_7781', 2.2, 'D+2'],
-      ['바른결제', 'BAREUN', 'brn-55120', 2.8, 'D+1'],
-      ['스마트정산', 'SMARTPAY', 'smt000912', 1.9, 'D+3'],
+      ['한빛페이먼츠', 'HANBIT', 'hanbit0001'],
+      ['누리PG', 'NURIPG', 'nuri_m_7781'],
+      ['바른결제', 'BAREUN', 'brn-55120'],
+      ['스마트정산', 'SMARTPAY', 'smt000912'],
     ];
-    const pgRows = pgs.map(([name, code, mid, fee, cycle], i) => {
+    const pgRows = pgs.map(([name, code, mid], i) => {
       const id = Number(db.prepare(`
-        INSERT INTO pgs (name, code, mid, fee_rate, settlement_cycle, manager_name, manager_phone, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE')`).run(name, code, mid, fee, cycle, `담당자${i + 1}`, `010-1234-${5000 + i}`).lastInsertRowid);
-      return { id, fee };
+        INSERT INTO pgs (name, code, mid, manager_name, manager_phone, status)
+        VALUES (?, ?, ?, ?, ?, 'ACTIVE')`).run(name, code, mid, `담당자${i + 1}`, `010-1234-${5000 + i}`).lastInsertRowid);
+      return { id };
     });
 
     // 선불사업자 (가상의 회사)
@@ -128,7 +128,7 @@ export function seedDemo() {
       }
       const status = rand(1, 100) <= 4 ? 'CANCELLED' : 'APPROVED';
       if (status === 'APPROVED') card.balance += type === 'PAYMENT' ? -amount : amount;
-      const fee = type === 'PAYMENT' ? Math.round((amount * pg.fee) / 100) : 0;
+      const fee = 0;
       ins.run(card.id, card.corp, type === 'CHARGE' && rand(0, 1) ? null : pg.id, type, amount, fee,
         type === 'CHARGE' ? null : choice(merchants), newApprovalNo(), status, fmtDateTime(at));
     }

@@ -356,7 +356,7 @@ function EntryModal({ corps, pgs, onClose, onSaved }) {
             <span className="field-label">PG</span>
             <select value={pgId} onChange={(e) => setPgId(e.target.value)}>
               <option value="">선택 안 함</option>
-              {pgs.filter((p) => p.status === 'ACTIVE').map((p) => <option key={p.id} value={p.id}>{p.name} ({p.fee_rate}%)</option>)}
+              {pgs.filter((p) => p.status === 'ACTIVE').map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
         </div>

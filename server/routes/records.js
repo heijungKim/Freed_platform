@@ -14,7 +14,7 @@ const ALLOC_AMOUNT = "(SELECT COALESCE(SUM(amount),0) FROM transactions WHERE re
 const ALLOC_CARDS = "(SELECT COUNT(DISTINCT card_id) FROM transactions WHERE record_id = r.id AND status = 'APPROVED')";
 
 const SELECT = `
-  SELECT r.*, c.name AS corporation_name, p.name AS pg_name, p.fee_rate, u.name AS created_by_name,
+  SELECT r.*, c.name AS corporation_name, p.name AS pg_name, u.name AS created_by_name,
     ${ALLOC_COUNT} AS alloc_count, ${ALLOC_AMOUNT} AS alloc_amount, ${ALLOC_CARDS} AS alloc_cards
   FROM tx_records r
   JOIN corporations c ON c.id = r.corporation_id

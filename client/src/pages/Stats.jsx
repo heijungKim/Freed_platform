@@ -62,7 +62,7 @@ export default function Stats() {
         <StatCard label="총 거래건수" value={`${num(p.tx_count)}건`} sub={`입력 ${num(p.entries)}회 · ${num(p.corporations_with_records)}개 법인`} tone="violet" />
         <StatCard label="총 금액" value={won(p.total_amount)} tone="blue" />
         <StatCard label="건당 평균 금액" value={won(p.tx_count ? Math.round(p.total_amount / p.tx_count) : 0)} tone="amber" />
-        <StatCard label="PG 수수료 (추정)" value={won(p.fee)} sub={p.total_amount ? `평균 ${((p.fee / p.total_amount) * 100).toFixed(2)}% · PG 지정분 기준` : null} />
+        <StatCard label="법인당 평균 금액" value={won(p.corporations_with_records ? Math.round(p.total_amount / p.corporations_with_records) : 0)} sub={`거래 입력 법인 ${num(p.corporations_with_records)}곳 기준`} />
       </div>
       <div className="stat-grid">
         <StatCard label="전체 카드 잔액 (선수금)" value={won(t.total_balance)} tone="green" />
@@ -102,11 +102,10 @@ export default function Stats() {
             rows={data?.byPg || []}
             columns={[
               { key: 'name', label: 'PG', filter: true, render: (r) => <strong>{r.name}</strong> },
-              { key: 'fee_rate', label: '요율', align: 'right', filter: true, render: (r) => `${r.fee_rate}%` },
               { key: 'tx_count', label: '건수', align: 'right', filter: true, render: (r) => num(r.tx_count) },
               { key: 'total_amount', label: '총 금액', align: 'right', filter: true, render: (r) => won(r.total_amount) },
               { key: 'share', label: '금액 비중', width: 140, render: (r) => <Share value={r.total_amount} total={totalPgAmount} /> },
-              { key: 'fee', label: '수수료', align: 'right', filter: true, render: (r) => won(r.fee) },
+              { key: 'avg', label: '건당 평균', align: 'right', render: (r) => (r.tx_count ? won(Math.round(r.total_amount / r.tx_count)) : '-') },
             ]}
           />
         </div>

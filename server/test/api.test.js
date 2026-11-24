@@ -73,7 +73,7 @@ test('관리자 로그인 및 거래/잔액 처리', async () => {
 
   const pay = await call('POST', '/transactions', { card_id: card.body.id, type: 'PAYMENT', amount: 4000, pg_id: pg.id });
   assert.equal(pay.status, 201);
-  assert.equal(pay.body.fee, Math.round(4000 * pg.fee_rate / 100));
+  assert.equal(pay.body.fee, 0);
   assert.equal((await call('GET', `/cards/${card.body.id}`)).body.balance, 6000);
 
   await call('POST', `/transactions/${pay.body.id}/cancel`);
@@ -136,7 +136,7 @@ test('거래내역 수동 입력 / 법인별 합계 / 수정 / 삭제', async ()
   const stats = await call('GET', '/stats/summary?from=2030-01-01&to=2030-01-31');
   assert.equal(stats.body.period.tx_count, 21);
   assert.equal(stats.body.period.total_amount, 1830000);
-  assert.equal(stats.body.period.fee, Math.round(1000000 * pg.fee_rate / 100) + Math.round(30000 * pg.fee_rate / 100));
+  assert.equal(stats.body.period.fee, undefined);
 
   // 거래내역이 있는 법인은 삭제 불가
   assert.equal((await call('DELETE', `/corporations/${other.id}`)).status, 400);
@@ -233,6 +233,17 @@ test('거래내역 → 법인 카드 충전 자동 배분', async () => {
   const del = await call('DELETE', `/records/${recId}`);
   assert.equal(del.body.cancelled, 5);
   assert.equal((await call('GET', `/cards?corporation_id=${corp.id}`)).body.totalBalance, 0);
+});
+
+test('PG: 수수료율·정산주기 없이 등록/수정', async () => {
+  const r = await call('POST', '/pgs', { name: '테스트PG', code: 'testpg', mid: 'm-1', fee_rate: 9, settlement_cycle: 'D+9' });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.code, 'TESTPG');
+  assert.equal(r.body.fee_rate, 0); // 전달해도 무시
+  const u = await call('PUT', `/pgs/${r.body.id}`, { name: '테스트PG2', fee_rate: 5 });
+  assert.equal(u.body.name, '테스트PG2');
+  assert.equal(u.body.fee_rate, 0);
+  assert.equal((await call('DELETE', `/pgs/${r.body.id}`)).status, 200);
 });
 
 test('법인 사용 PG', async () => {

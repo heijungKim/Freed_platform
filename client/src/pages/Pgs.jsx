@@ -8,9 +8,6 @@ const FIELDS = [
   { name: 'name', label: 'PG사명', required: true },
   { name: 'code', label: 'PG 코드', required: true, placeholder: '영문 대문자', hint: '영문/숫자, 자동 대문자 변환' },
   { name: 'mid', label: '가맹점 ID (MID)' },
-  { name: 'fee_rate', label: '수수료율 (%)', type: 'number', step: '0.01', min: '0', required: true },
-  { name: 'settlement_cycle', label: '정산 주기', type: 'select', required: true, default: 'D+1',
-    options: ['D+0', 'D+1', 'D+2', 'D+3', 'D+7', '월정산'].map((v) => ({ value: v, label: v })) },
   { name: 'status', label: '상태', type: 'select', required: true, default: 'ACTIVE',
     options: [{ value: 'ACTIVE', label: '활성' }, { value: 'INACTIVE', label: '비활성' }] },
   { name: 'manager_name', label: '담당자' },
@@ -38,8 +35,6 @@ export default function Pgs() {
     { key: 'name', filter: true, label: 'PG사명', render: (r) => <strong>{r.name}</strong> },
     { key: 'code', filter: true, label: '코드', render: (r) => <code>{r.code}</code> },
     { key: 'mid', filter: true, label: 'MID' },
-    { key: 'fee_rate', filter: true, label: '수수료율', align: 'right', render: (r) => `${r.fee_rate}%` },
-    { key: 'settlement_cycle', filter: true, label: '정산주기' },
     { key: 'corporation_count', filter: true, label: '사용 법인', align: 'right', render: (r) => `${num(r.corporation_count)}곳` },
     { key: 'tx_count', filter: true, label: '누적 거래건수', align: 'right', render: (r) => num(r.tx_count) },
     { key: 'payment_amount', filter: true, label: '누적 거래금액', align: 'right', render: (r) => won(r.payment_amount) },
@@ -57,7 +52,7 @@ export default function Pgs() {
     <>
       <PageHeader
         title="PG 관리"
-        desc="결제대행사(PG) 연동 정보와 수수료율을 관리합니다."
+        desc="결제대행사(PG) 연동 정보를 관리합니다."
         actions={<button className="btn btn-primary" onClick={() => setEditing({})}>+ PG 등록</button>}
       />
       <FilterBar onSubmit={list.search} onReset={list.reset}>

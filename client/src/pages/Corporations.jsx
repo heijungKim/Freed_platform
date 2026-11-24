@@ -31,7 +31,7 @@ export default function Corporations() {
     {
       name: 'pg_ids', label: '사용 PG', type: 'checks',
       hint: '이 법인이 계약·사용하는 PG사를 선택하세요.',
-      options: pgs.map((p) => ({ value: p.id, label: `${p.name} (${p.fee_rate}%)${p.status !== 'ACTIVE' ? ' · 비활성' : ''}`, muted: p.status !== 'ACTIVE' })),
+      options: pgs.map((p) => ({ value: p.id, label: `${p.name}${p.status !== 'ACTIVE' ? ' · 비활성' : ''}`, muted: p.status !== 'ACTIVE' })),
     },
     ...BASE_FIELDS.slice(8),
   ];
@@ -146,8 +146,6 @@ function CorporationPgs({ corporation }) {
             ? <span className="badge badge-blue">사용 PG</span>
             : <span className="badge badge-amber" title="사용 PG로 지정되지 않았지만 거래내역이 있습니다">미지정·거래있음</span>) },
           { key: 'mid', label: 'MID', render: (r) => r.mid || '-' },
-          { key: 'fee_rate', label: '수수료율', align: 'right', render: (r) => `${r.fee_rate}%` },
-          { key: 'settlement_cycle', label: '정산주기' },
           { key: 'tx_count', label: '거래건수', align: 'right', render: (r) => `${num(r.tx_count)}건` },
           { key: 'total_amount', label: '총 금액', align: 'right', render: (r) => won(r.total_amount) },
           { key: 'share', label: '비중', align: 'right', render: (r) => (total ? `${((r.total_amount / total) * 100).toFixed(1)}%` : '-') },
