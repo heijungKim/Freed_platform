@@ -378,3 +378,9 @@ input:disabled { background: var(--surface-2); color: var(--muted); }
 .check-chip input { width: 15px; height: 15px; margin: 0; accent-color: var(--primary); }
 .check-chip.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); font-weight: 500; }
 .check-chip.muted-chip { color: var(--muted); }
+
+/* ---------- Bulk issue ---------- */
+.seg-inline { align-self: flex-start; }
+.seg-inline button { padding: 6px 14px; }
+.num-input { text-align: right; font-variant-numeric: tabular-nums; }
+.warn-text { color: var(--amber); }

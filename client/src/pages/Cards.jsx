@@ -72,7 +72,12 @@ export default function Cards() {
       <PageHeader
         title="선불카드 관리"
         desc="선불사업자·법인별 선불카드 발급, 충전, 상태(정지/분실) 관리를 합니다."
-        actions={<button className="btn btn-primary" onClick={() => setModal({ mode: 'issue', row: {} })}>+ 카드 발급</button>}
+        actions={(
+          <>
+            <button className="btn" onClick={() => setModal({ mode: 'bulk', row: {} })}>일괄 발급</button>
+            <button className="btn btn-primary" onClick={() => setModal({ mode: 'issue', row: {} })}>+ 카드 발급</button>
+          </>
+        )}
       />
       <div className="issuer-strip" role="tablist" aria-label="선불사업자별 보기">
         <button type="button" role="tab" aria-selected={!issuerId} className={`issuer-card issuer-all ${!issuerId ? 'on' : ''}`} onClick={() => selectIssuer('')}>
@@ -152,6 +157,20 @@ export default function Cards() {
       </div>
 
       {modal?.mode === 'history' && <CardHistory card={modal.row} onClose={() => setModal(null)} />}
+      {modal?.mode === 'bulk' && (
+        <BulkIssueModal
+          issuers={issuers.filter((i) => i.status === 'ACTIVE')}
+          corps={corps.filter((c) => c.status === 'ACTIVE')}
+          defaults={{ issuer_id: issuerId || '', corporation_id: corpId || '' }}
+          onClose={() => setModal(null)}
+          onDone={(result) => {
+            toast(`${num(result.count)}장 발급되었습니다.`);
+            setModal({ mode: 'bulk-result', row: result });
+            list.reload(); reloadCorps(); reloadIssuers();
+          }}
+        />
+      )}
+      {modal?.mode === 'bulk-result' && <BulkResult result={modal.row} onClose={() => setModal(null)} />}
       {modal?.mode === 'issue' && (
         <FormModal
           title="선불카드 발급"
@@ -248,6 +267,217 @@ function CardHistory({ card, onClose }) {
             { key: 'memo', label: '메모', render: (r) => r.memo || '-' },
             { key: 'status', label: '상태', filter: Object.entries(LABELS.txStatus).map(([value, label]) => ({ value, label })),
               render: (r) => <Badge value={r.status} kind="txStatus" /> },
+          ]}
+        />
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------- 일괄 발급 ---------- */
+const BULK_MAX = 1000;
+const digits = (v) => String(v).replace(/[^\d]/g, '');
+const comma = (v) => (v === '' ? '' : Number(v).toLocaleString('ko-KR'));
+
+function BulkIssueModal({ issuers, corps, defaults, onClose, onDone }) {
+  const [f, setF] = useState({
+    issuer_id: String(defaults.issuer_id || ''), corporation_id: String(defaults.corporation_id || ''),
+    mode: 'auto', quantity: '10', holder_prefix: '', start_no: '1', names: '',
+    limit_amount: '', initial_amount: '', expires_at: '', memo: '',
+  });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
+  const setNum = (k) => (e) => setF((s) => ({ ...s, [k]: digits(e.target.value) }));
+
+  const names = f.names.split(/\r?\n/).map((n) => n.trim()).filter(Boolean);
+  const qty = f.mode === 'auto' ? Number(f.quantity || 0) : names.length;
+  const start = Number(f.start_no || 1);
+  const width = Math.max(3, String(start + Math.max(qty, 1) - 1).length);
+  const sample = f.mode === 'auto'
+    ? (f.holder_prefix.trim() && qty > 0
+      ? [0, 1, qty - 1].filter((v, i, a) => v >= 0 && v < qty && a.indexOf(v) === i)
+        .map((i) => `${f.holder_prefix.trim()}-${String(start + i).padStart(width, '0')}`)
+      : [])
+    : names.slice(0, 3);
+  const issuer = issuers.find((i) => String(i.id) === f.issuer_id);
+  const initial = Number(f.initial_amount || 0);
+  const limit = Number(f.limit_amount || 0);
+  const dupNames = f.mode === 'list' ? names.length - new Set(names).size : 0;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!f.issuer_id) return setError('선불사업자를 선택해 주세요.');
+    if (!f.corporation_id) return setError('법인을 선택해 주세요.');
+    if (qty < 1) return setError(f.mode === 'auto' ? '발급 수량을 1장 이상 입력해 주세요.' : '사용자 명단을 입력해 주세요.');
+    if (qty > BULK_MAX) return setError(`한 번에 최대 ${BULK_MAX.toLocaleString()}장까지 발급할 수 있습니다.`);
+    if (f.mode === 'auto' && !f.holder_prefix.trim()) return setError('사용자명 앞글자를 입력해 주세요.');
+    if (limit && initial > limit) return setError('초기 충전 금액이 충전 한도를 초과합니다.');
+    setBusy(true);
+    try {
+      const body = {
+        issuer_id: f.issuer_id, corporation_id: f.corporation_id,
+        limit_amount: f.limit_amount, initial_amount: f.initial_amount, expires_at: f.expires_at, memo: f.memo,
+        ...(f.mode === 'auto'
+          ? { quantity: qty, holder_prefix: f.holder_prefix.trim(), start_no: start }
+          : { holder_names: names }),
+      };
+      onDone(await api.post('/cards/bulk', body));
+    } catch (err) {
+      setError(err.message);
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Modal
+      title="선불카드 일괄 발급"
+      width={720}
+      onClose={onClose}
+      footer={(
+        <>
+          <div className="foot-left entry-sum">
+            <b>{num(qty)}</b>장{initial > 0 && <> · 초기 충전 합계 <b>{won(initial * qty)}</b></>}
+          </div>
+          <button type="button" className="btn" onClick={onClose}>취소</button>
+          <button type="submit" form="bulk-form" className="btn btn-primary" disabled={busy || qty < 1}>
+            {busy ? '발급 중…' : `${num(qty)}장 발급`}
+          </button>
+        </>
+      )}
+    >
+      <form id="bulk-form" className="form-grid" onSubmit={submit}>
+        <label className="field full">
+          <span className="field-label">선불사업자<em>*</em></span>
+          <select value={f.issuer_id} onChange={set('issuer_id')} required>
+            <option value="">선택하세요</option>
+            {issuers.map((i) => <option key={i.id} value={i.id}>{i.name} (BIN {i.bin})</option>)}
+          </select>
+          {issuer && <small className="hint">카드번호가 {issuer.bin}으로 시작합니다.</small>}
+        </label>
+        <label className="field full">
+          <span className="field-label">법인<em>*</em></span>
+          <select value={f.corporation_id} onChange={set('corporation_id')} required>
+            <option value="">선택하세요</option>
+            {corps.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+
+        <div className="field full">
+          <span className="field-label">사용자명 지정 방식</span>
+          <div className="seg seg-inline">
+            <button type="button" className={f.mode === 'auto' ? 'on' : ''} onClick={() => setF((s) => ({ ...s, mode: 'auto' }))}>수량 입력 (자동 번호)</button>
+            <button type="button" className={f.mode === 'list' ? 'on' : ''} onClick={() => setF((s) => ({ ...s, mode: 'list' }))}>명단 붙여넣기</button>
+          </div>
+        </div>
+
+        {f.mode === 'auto' ? (
+          <>
+            <label className="field">
+              <span className="field-label">발급 수량<em>*</em></span>
+              <input inputMode="numeric" className="num-input" value={comma(f.quantity)} onChange={setNum('quantity')} placeholder="예) 50" autoFocus />
+              <small className="hint">최대 {BULK_MAX.toLocaleString()}장</small>
+            </label>
+            <label className="field">
+              <span className="field-label">사용자명 앞글자<em>*</em></span>
+              <input value={f.holder_prefix} onChange={set('holder_prefix')} placeholder="예) 영업팀" maxLength={40} />
+            </label>
+            <label className="field">
+              <span className="field-label">시작 번호</span>
+              <input inputMode="numeric" value={f.start_no} onChange={setNum('start_no')} placeholder="1" />
+            </label>
+          </>
+        ) : (
+          <label className="field full">
+            <span className="field-label">사용자 명단<em>*</em> <span className="muted">(한 줄에 한 명 · {num(names.length)}명)</span></span>
+            <textarea rows={6} value={f.names} onChange={set('names')} placeholder={'김민준\n이서연\n박도윤'} />
+            {dupNames > 0 && <small className="hint warn-text">같은 이름이 {dupNames}건 있습니다. (그대로 발급됩니다)</small>}
+          </label>
+        )}
+
+        {sample.length > 0 && (
+          <div className="field full">
+            <span className="field-label">사용자명 미리보기</span>
+            <div className="pg-chips" style={{ maxWidth: 'none' }}>
+              {sample.map((n, i) => (
+                <React.Fragment key={n + i}>
+                  {f.mode === 'auto' && i === sample.length - 1 && qty > 3 && <span className="muted">…</span>}
+                  <span className="pg-chip">{n}</span>
+                </React.Fragment>
+              ))}
+              {f.mode === 'list' && names.length > 3 && <span className="muted">외 {num(names.length - 3)}명</span>}
+            </div>
+          </div>
+        )}
+
+        <label className="field">
+          <span className="field-label">충전 한도 (원)</span>
+          <input inputMode="numeric" className="num-input" value={comma(f.limit_amount)} onChange={setNum('limit_amount')} placeholder="비워두면 무제한" />
+        </label>
+        <label className="field">
+          <span className="field-label">초기 충전 금액 (원/장)</span>
+          <input inputMode="numeric" className="num-input" value={comma(f.initial_amount)} onChange={setNum('initial_amount')} placeholder="0" />
+        </label>
+        <label className="field">
+          <span className="field-label">유효기간</span>
+          <input type="date" value={f.expires_at} onChange={set('expires_at')} />
+          <small className="hint">미입력 시 발급일로부터 5년</small>
+        </label>
+        <label className="field">
+          <span className="field-label">메모</span>
+          <input value={f.memo} onChange={set('memo')} placeholder="미입력 시 '일괄발급 날짜 (N장)'" />
+        </label>
+        {error && <div className="form-error full">{error}</div>}
+      </form>
+    </Modal>
+  );
+}
+
+/** 일괄 발급 결과 + CSV 저장 */
+function BulkResult({ result, onClose }) {
+  const download = () => {
+    const esc = (v) => {
+      let s = String(v ?? '');
+      if (/^[=+\-@]/.test(s)) s = `'${s}`;
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ['카드번호', '선불사업자', '법인', '사용자', '잔액', '충전 한도', '발급일', '유효기간'];
+    const lines = result.rows.map((r) => [fmtCard(r.card_no), r.issuer_name, r.corporation_name, r.holder_name, r.balance,
+      r.limit_amount || '무제한', r.issued_at, r.expires_at].map(esc).join(','));
+    const blob = new Blob(['\uFEFF' + [header.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `bulk_issue_${result.rows[0]?.issued_at || ''}_${result.count}.csv`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  const first = result.rows[0] || {};
+  return (
+    <Modal
+      title={`일괄 발급 완료 · ${num(result.count)}장`}
+      width={760}
+      onClose={onClose}
+      footer={(
+        <>
+          <button className="btn" onClick={download}>발급 목록 CSV 저장</button>
+          <button className="btn btn-primary" onClick={onClose}>확인</button>
+        </>
+      )}
+    >
+      <div className="mini-stats" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
+        <span>선불사업자 <b>{first.issuer_name}</b></span>
+        <span>법인 <b>{first.corporation_name}</b></span>
+        <span>초기 충전 합계 <b>{won(result.total_initial)}</b></span>
+      </div>
+      <div className="modal-section" style={{ marginTop: 0, borderTop: 0, paddingTop: 0 }}>
+        <DataTable
+          rows={result.rows}
+          columns={[
+            { key: 'card_no', label: '카드번호', filter: true, render: (r) => <span className="mono">{fmtCard(r.card_no)}</span> },
+            { key: 'holder_name', label: '사용자', filter: true },
+            { key: 'balance', label: '잔액', align: 'right', render: (r) => won(r.balance) },
+            { key: 'limit_amount', label: '충전 한도', align: 'right', render: (r) => (r.limit_amount ? won(r.limit_amount) : '무제한') },
+            { key: 'expires_at', label: '유효기간' },
           ]}
         />
       </div>

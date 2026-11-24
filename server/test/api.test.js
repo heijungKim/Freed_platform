@@ -144,6 +144,39 @@ test('거래내역 수동 입력 / 법인별 합계 / 수정 / 삭제', async ()
   assert.equal((await call('GET', `/records?from=2030-01-01&to=2030-01-31&corporation_id=${corp.id}`)).body.total, 1);
 });
 
+test('카드 일괄 발급', async () => {
+  const corp = (await call('GET', '/corporations?f_name=' + encodeURIComponent('테스트법인'))).body.rows[0];
+  const issuer = (await call('GET', '/issuers/options')).body.find((i) => i.status === 'ACTIVE');
+  const before = (await call('GET', `/cards?corporation_id=${corp.id}&size=1`)).body.total;
+
+  // 자동 번호
+  const r = await call('POST', '/cards/bulk', {
+    issuer_id: issuer.id, corporation_id: corp.id, quantity: 25, holder_prefix: '영업팀', start_no: 8,
+    limit_amount: 100000, initial_amount: 30000,
+  });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.count, 25);
+  assert.equal(r.body.total_initial, 750000);
+  assert.equal(r.body.rows[0].holder_name, '영업팀-008');
+  assert.equal(r.body.rows[24].holder_name, '영업팀-032');
+  assert.ok(r.body.rows.every((c) => c.card_no.startsWith(issuer.bin) && c.balance === 30000 && c.issuer_id === issuer.id));
+  assert.equal(new Set(r.body.rows.map((c) => c.card_no)).size, 25);
+  assert.ok(r.body.rows[0].memo.startsWith('일괄발급'));
+
+  // 명단
+  const r2 = await call('POST', '/cards/bulk', { issuer_id: issuer.id, corporation_id: corp.id, holder_names: ['김하나', ' ', '이두리', '박세나'] });
+  assert.equal(r2.body.count, 3);
+  assert.deepEqual(r2.body.rows.map((c) => c.holder_name), ['김하나', '이두리', '박세나']);
+
+  // 검증 실패 → 한 장도 발급되지 않음
+  assert.equal((await call('POST', '/cards/bulk', { issuer_id: issuer.id, corporation_id: corp.id, quantity: 1001, holder_prefix: 'x' })).status, 400);
+  assert.equal((await call('POST', '/cards/bulk', { issuer_id: issuer.id, corporation_id: corp.id, quantity: 0, holder_prefix: 'x' })).status, 400);
+  assert.equal((await call('POST', '/cards/bulk', { issuer_id: issuer.id, corporation_id: corp.id, quantity: 3 })).status, 400);
+  const over = await call('POST', '/cards/bulk', { issuer_id: issuer.id, corporation_id: corp.id, quantity: 3, holder_prefix: 'x', limit_amount: 1000, initial_amount: 5000 });
+  assert.equal(over.status, 400);
+  assert.equal((await call('GET', `/cards?corporation_id=${corp.id}&size=1`)).body.total, before + 28);
+});
+
 test('법인 사용 PG', async () => {
   const corp = (await call('GET', '/corporations?f_name=' + encodeURIComponent('테스트법인'))).body.rows[0];
   const pgs = (await call('GET', '/pgs/options')).body;
