@@ -5,11 +5,17 @@
 import { Router } from 'express';
 import { db, tx } from '../db.js';
 import { paging, wrap, notFound, bad, dateParam, csvEscape, columnFilters, toInt } from '../util.js';
+import { allocateRecord, revertAllocation } from '../allocation.js';
 
 const router = Router();
 
+const ALLOC_COUNT = "(SELECT COUNT(*) FROM transactions WHERE record_id = r.id AND status = 'APPROVED')";
+const ALLOC_AMOUNT = "(SELECT COALESCE(SUM(amount),0) FROM transactions WHERE record_id = r.id AND status = 'APPROVED')";
+const ALLOC_CARDS = "(SELECT COUNT(DISTINCT card_id) FROM transactions WHERE record_id = r.id AND status = 'APPROVED')";
+
 const SELECT = `
-  SELECT r.*, c.name AS corporation_name, p.name AS pg_name, p.fee_rate, u.name AS created_by_name
+  SELECT r.*, c.name AS corporation_name, p.name AS pg_name, p.fee_rate, u.name AS created_by_name,
+    ${ALLOC_COUNT} AS alloc_count, ${ALLOC_AMOUNT} AS alloc_amount, ${ALLOC_CARDS} AS alloc_cards
   FROM tx_records r
   JOIN corporations c ON c.id = r.corporation_id
   LEFT JOIN pgs p ON p.id = r.pg_id
@@ -110,38 +116,84 @@ function validPg(pgId) {
   return Number(pgId);
 }
 
-/** 입력 (여러 법인 한 번에) — body: { record_date, pg_id?, items: [{ corporation_id, tx_count, total_amount, memo }] } */
+/**
+ * 입력 (여러 법인 한 번에)
+ * body: { record_date, pg_id?, allocate?: true, items: [{ corporation_id, tx_count, total_amount, memo }] }
+ * allocate=true(기본) 이면 각 법인의 정상 카드에 충전 거래로 자동 배분 (건수·합계 일치)
+ */
 router.post('/', wrap((req, res) => {
   const b = req.body || {};
   const date = dateParam(b.record_date, '거래일');
   if (!date) throw bad('거래일을 입력해 주세요.');
   const pgId = validPg(b.pg_id);
+  const allocate = b.allocate !== false && b.allocate !== 'false';
   const items = Array.isArray(b.items) ? b.items : [b];
   if (!items.length) throw bad('입력할 내용이 없습니다.');
   const clean = items.map(validItem);
-  const ids = tx(() => clean.map((it) => Number(db.prepare(`
-    INSERT INTO tx_records (record_date, corporation_id, pg_id, tx_count, total_amount, memo, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`).run(date, it.corporation_id, pgId, it.tx_count, it.total_amount, it.memo, req.user.id).lastInsertRowid)));
-  res.status(201).json({ ids, count: ids.length });
+  const result = tx(() => clean.map((it) => {
+    const id = Number(db.prepare(`
+      INSERT INTO tx_records (record_date, corporation_id, pg_id, tx_count, total_amount, memo, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(date, it.corporation_id, pgId, it.tx_count, it.total_amount, it.memo, req.user.id).lastInsertRowid);
+    const alloc = allocate ? allocateRecord({ id, record_date: date, pg_id: pgId, ...it }, req.user.id) : null;
+    return { id, alloc };
+  }));
+  res.status(201).json({
+    ids: result.map((r) => r.id),
+    count: result.length,
+    allocated: result.reduce((s, r) => s + (r.alloc?.count || 0), 0),
+    allocated_amount: result.reduce((s, r) => s + (r.alloc?.amount || 0), 0),
+  });
+}));
+
+/** 배분된 카드 충전 내역 */
+router.get('/:id/allocations', wrap((req, res) => {
+  const id = Number(req.params.id);
+  const record = db.prepare(`${SELECT} WHERE r.id = ?`).get(id);
+  if (!record) throw notFound('거래내역');
+  const rows = db.prepare(`
+    SELECT t.id, t.card_id, t.amount, t.transacted_at, t.approval_no, k.card_no, k.holder_name, i.name AS issuer_name
+    FROM transactions t JOIN cards k ON k.id = t.card_id LEFT JOIN issuers i ON i.id = k.issuer_id
+    WHERE t.record_id = ? AND t.status = 'APPROVED' ORDER BY t.transacted_at, t.id`).all(id);
+  const byCard = new Map();
+  for (const t of rows) {
+    const c = byCard.get(t.card_id) || { card_id: t.card_id, card_no: t.card_no, holder_name: t.holder_name, issuer_name: t.issuer_name, count: 0, amount: 0 };
+    c.count += 1;
+    c.amount += t.amount;
+    byCard.set(t.card_id, c);
+  }
+  res.json({ record, rows, cards: [...byCard.values()].sort((a, b) => b.amount - a.amount) });
 }));
 
 router.put('/:id', wrap((req, res) => {
   const id = Number(req.params.id);
-  if (!db.prepare('SELECT 1 FROM tx_records WHERE id = ?').get(id)) throw notFound('거래내역');
+  const cur = db.prepare(`${SELECT} WHERE r.id = ?`).get(id);
+  if (!cur) throw notFound('거래내역');
   const b = req.body || {};
   const date = dateParam(b.record_date, '거래일');
   if (!date) throw bad('거래일을 입력해 주세요.');
   const it = validItem(b);
-  db.prepare(`UPDATE tx_records SET record_date = ?, corporation_id = ?, pg_id = ?, tx_count = ?, total_amount = ?, memo = ?,
-    updated_at = datetime('now','localtime') WHERE id = ?`)
-    .run(date, it.corporation_id, validPg(b.pg_id), it.tx_count, it.total_amount, it.memo, id);
+  const pgId = validPg(b.pg_id);
+  // 배분 여부: 지정 없으면 기존 상태 유지
+  const allocate = b.allocate === undefined ? cur.alloc_count > 0 : b.allocate !== false && b.allocate !== 'false';
+  tx(() => {
+    revertAllocation(id);
+    db.prepare(`UPDATE tx_records SET record_date = ?, corporation_id = ?, pg_id = ?, tx_count = ?, total_amount = ?, memo = ?,
+      updated_at = datetime('now','localtime') WHERE id = ?`)
+      .run(date, it.corporation_id, pgId, it.tx_count, it.total_amount, it.memo, id);
+    if (allocate) allocateRecord({ id, record_date: date, pg_id: pgId, ...it }, req.user.id);
+  });
   res.json(db.prepare(`${SELECT} WHERE r.id = ?`).get(id));
 }));
 
 router.delete('/:id', wrap((req, res) => {
-  const r = db.prepare('DELETE FROM tx_records WHERE id = ?').run(Number(req.params.id));
-  if (!r.changes) throw notFound('거래내역');
-  res.json({ ok: true });
+  const id = Number(req.params.id);
+  if (!db.prepare('SELECT 1 FROM tx_records WHERE id = ?').get(id)) throw notFound('거래내역');
+  const cancelled = tx(() => {
+    const n = revertAllocation(id);
+    db.prepare('DELETE FROM tx_records WHERE id = ?').run(id);
+    return n;
+  });
+  res.json({ ok: true, cancelled });
 }));
 
 export default router;

@@ -384,3 +384,12 @@ input:disabled { background: var(--surface-2); color: var(--muted); }
 .seg-inline button { padding: 6px 14px; }
 .num-input { text-align: right; font-variant-numeric: tabular-nums; }
 .warn-text { color: var(--amber); }
+
+/* ---------- 카드 배분 ---------- */
+.alloc-toggle { display: flex; gap: 10px; align-items: flex-start; margin-top: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; background: var(--surface-2); }
+.alloc-toggle.on { border-color: var(--primary); background: var(--primary-soft); }
+.alloc-toggle input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--primary); flex-shrink: 0; }
+.alloc-toggle strong { display: block; font-size: 13.5px; }
+.alloc-toggle small { color: var(--muted); font-size: 12.5px; }
+.line-info { grid-column: 1 / -1; font-size: 12px; color: var(--muted); margin-top: -2px; }
+.line-info.warn { color: var(--red); }

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useList, useOptions } from '../hooks.js';
 import { DataTable, FormModal, Modal, PageHeader, Pagination, StatCard, useConfirm, useToast } from '../components/ui.jsx';
-import { daysAgo, num, today, won } from '../format.js';
+import { daysAgo, fmtCard, num, today, won } from '../format.js';
 
 /** 이번 달 1일 */
 const monthStart = () => `${today().slice(0, 8)}01`;
@@ -105,7 +105,10 @@ export default function Transactions() {
           corps={corps}
           pgs={pgs}
           onClose={() => setEntering(false)}
-          onSaved={(n) => { toast(`${n}건 입력되었습니다.`); setEntering(false); refresh(); }}
+          onSaved={(r) => {
+            toast(r.allocated ? `${r.count}건 입력 · 카드 충전 ${num(r.allocated)}건 배분 (${won(r.allocated_amount)})` : `${r.count}건 입력되었습니다.`);
+            setEntering(false); refresh();
+          }}
         />
       )}
       {detailCorp && (
@@ -167,6 +170,7 @@ function Share({ value, total }) {
 function RecordList({ range, pgs, corps, version, onChanged, corporationId, compact }) {
   const list = useList('/records', { ...range, corporation_id: corporationId || '' }, compact ? 500 : 30);
   const [editing, setEditing] = useState(null);
+  const [viewing, setViewing] = useState(null);
   const confirm = useConfirm();
   const toast = useToast();
 
@@ -179,7 +183,8 @@ function RecordList({ range, pgs, corps, version, onChanged, corporationId, comp
   useEffect(() => { if (version) list.reload(); }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const remove = async (r) => {
-    if (!(await confirm(`${r.record_date} ${r.corporation_name} 입력(${num(r.tx_count)}건 / ${won(r.total_amount)})을 삭제할까요?`, { danger: true, okLabel: '삭제' }))) return;
+    const extra = r.alloc_count ? `\n카드에 배분된 충전 ${num(r.alloc_count)}건(${won(r.alloc_amount)})도 함께 취소되고 카드 잔액이 차감됩니다.` : '';
+    if (!(await confirm(`${r.record_date} ${r.corporation_name} 입력(${num(r.tx_count)}건 / ${won(r.total_amount)})을 삭제할까요?${extra}`, { danger: true, okLabel: '삭제' }))) return;
     try {
       await api.del(`/records/${r.id}`);
       toast('삭제되었습니다.');
@@ -193,6 +198,7 @@ function RecordList({ range, pgs, corps, version, onChanged, corporationId, comp
     { key: 'pg_name', label: 'PG', filter: true, render: (r) => r.pg_name || '-' },
     { key: 'tx_count', label: '거래건수', align: 'right', filter: true, render: (r) => `${num(r.tx_count)}건` },
     { key: 'total_amount', label: '총 금액', align: 'right', filter: true, render: (r) => <strong>{won(r.total_amount)}</strong> },
+    { key: 'alloc', label: '카드 배분', render: (r) => <AllocBadge r={r} /> },
     { key: 'memo', label: '메모', filter: true, render: (r) => r.memo || '-' },
     ...(compact ? [] : [{ key: 'created_by_name', label: '입력자', filter: true, render: (r) => r.created_by_name || '-' }]),
     { key: 'actions', label: '', align: 'right', render: (r) => (
@@ -212,8 +218,11 @@ function RecordList({ range, pgs, corps, version, onChanged, corporationId, comp
         loading={list.loading}
         colFilters={list.colFilters}
         onColFilter={list.onColFilter}
+        onRowClick={setViewing}
+        rowTitle="클릭하여 카드 배분 내역 보기"
         empty="해당 기간에 입력된 거래내역이 없습니다."
       />
+      {viewing && <AllocationModal record={viewing} onClose={() => setViewing(null)} />}
       <div className="total-row">
         <span>조회 합계 ({num(list.data.total)}회 입력)</span>
         <span><b>{num(sum.tx_count)}</b>건</span>
@@ -223,18 +232,21 @@ function RecordList({ range, pgs, corps, version, onChanged, corporationId, comp
       {editing && (
         <FormModal
           title="거래내역 수정"
-          initial={{ ...editing, pg_id: editing.pg_id ?? '' }}
+          initial={{ ...editing, pg_id: editing.pg_id ?? '', allocate: editing.alloc_count > 0 ? 'Y' : 'N' }}
           fields={[
             { name: 'record_date', label: '거래일', type: 'date', required: true },
             { name: 'corporation_id', label: '법인', type: 'select', required: true, options: corps.map((c) => ({ value: c.id, label: c.name })) },
             { name: 'pg_id', label: 'PG', type: 'select', options: pgs.map((p) => ({ value: p.id, label: p.name })) },
             { name: 'tx_count', label: '거래건수', type: 'number', min: '0', required: true },
             { name: 'total_amount', label: '총 금액 (원)', type: 'number', min: '0', required: true },
+            { name: 'allocate', label: '카드 충전 배분', type: 'select', required: true, full: true,
+              hint: '저장하면 기존 배분은 취소되고, 수정한 건수·금액으로 다시 배분됩니다.',
+              options: [{ value: 'Y', label: '법인 선불카드에 자동 배분' }, { value: 'N', label: '배분하지 않음 (기록만)' }] },
             { name: 'memo', label: '메모', type: 'textarea' },
           ]}
           onClose={() => setEditing(null)}
           onSubmit={async (v) => {
-            await api.put(`/records/${editing.id}`, v);
+            await api.put(`/records/${editing.id}`, { ...v, allocate: v.allocate === 'Y' });
             toast('수정되었습니다.');
             setEditing(null);
             onChanged();
@@ -269,10 +281,12 @@ const withComma = (v) => (v === '' ? '' : Number(v).toLocaleString('ko-KR'));
 function EntryModal({ corps, pgs, onClose, onSaved }) {
   const [date, setDate] = useState(today());
   const [pgId, setPgId] = useState('');
+  const [allocate, setAllocate] = useState(true);
   const [lines, setLines] = useState([emptyLine()]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const activeCorps = corps.filter((c) => c.status === 'ACTIVE');
+  const corpById = (id) => corps.find((c) => String(c.id) === String(id));
 
   const update = (key, field, value) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, [field]: value } : l)));
   const addLine = () => setLines((ls) => [...ls, emptyLine()]);
@@ -294,6 +308,14 @@ function EntryModal({ corps, pgs, onClose, onSaved }) {
     for (const [i, l] of filled.entries()) {
       if (!l.corporation_id) return setError(`${i + 1}번째 줄: 법인을 선택해 주세요.`);
       if (l.tx_count === '' || l.total_amount === '') return setError(`${i + 1}번째 줄: 거래건수와 총 금액을 입력해 주세요.`);
+      if (allocate) {
+        const c = corpById(l.corporation_id);
+        const cnt = Number(l.tx_count); const amt = Number(l.total_amount);
+        if ((cnt || amt) && !c?.active_card_count) return setError(`${i + 1}번째 줄: ${c?.name || '법인'}에 정상 카드가 없어 배분할 수 없습니다.`);
+        if (amt && !cnt) return setError(`${i + 1}번째 줄: 금액을 배분하려면 거래건수가 1건 이상이어야 합니다.`);
+        if (cnt && amt < cnt) return setError(`${i + 1}번째 줄: 총 금액은 거래건수 이상이어야 합니다.`);
+        if (c && c.charge_room >= 0 && amt > c.charge_room) return setError(`${i + 1}번째 줄: ${c.name} 카드의 충전 한도 여유(${won(c.charge_room)})보다 금액이 큽니다.`);
+      }
     }
     const ids = filled.map((l) => l.corporation_id);
     if (new Set(ids).size !== ids.length) return setError('같은 법인이 두 번 입력되었습니다.');
@@ -302,9 +324,10 @@ function EntryModal({ corps, pgs, onClose, onSaved }) {
       const r = await api.post('/records', {
         record_date: date,
         pg_id: pgId || null,
+        allocate,
         items: filled.map(({ corporation_id, tx_count, total_amount, memo }) => ({ corporation_id, tx_count, total_amount, memo })),
       });
-      onSaved(r.count);
+      onSaved(r);
     } catch (err) {
       setError(err.message);
     } finally { setBusy(false); }
@@ -338,6 +361,14 @@ function EntryModal({ corps, pgs, onClose, onSaved }) {
           </label>
         </div>
 
+        <label className={`alloc-toggle ${allocate ? 'on' : ''}`}>
+          <input type="checkbox" checked={allocate} onChange={(e) => setAllocate(e.target.checked)} />
+          <div>
+            <strong>법인 선불카드에 충전으로 자동 배분</strong>
+            <small>입력한 거래건수만큼 법인의 정상 카드에 금액을 다양하게 나눠 충전하고, 합계를 총 금액과 정확히 맞춥니다.</small>
+          </div>
+        </label>
+
         <div className="entry-head">
           <span className="field-label">법인별 거래건수 / 총 금액</span>
           <button type="button" className="btn btn-sm" onClick={fillAll}>활성 법인 모두 불러오기</button>
@@ -358,12 +389,104 @@ function EntryModal({ corps, pgs, onClose, onSaved }) {
                 value={withComma(l.total_amount)} onChange={(e) => update(l.key, 'total_amount', onlyDigits(e.target.value))} />
               <input aria-label="메모" placeholder="선택" value={l.memo} onChange={(e) => update(l.key, 'memo', e.target.value)} />
               <button type="button" className="icon-btn" aria-label="줄 삭제" onClick={() => removeLine(l.key)} disabled={lines.length === 1}>×</button>
+              {allocate && l.corporation_id && <LineInfo corp={corpById(l.corporation_id)} line={l} />}
             </div>
           ))}
         </div>
         <button type="button" className="btn btn-sm entry-add" onClick={addLine}>+ 줄 추가</button>
         {error && <div className="form-error" style={{ marginTop: 12 }}>{error}</div>}
       </form>
+    </Modal>
+  );
+}
+
+/* ---------- 카드 배분 표시 ---------- */
+function AllocBadge({ r }) {
+  if (!r.alloc_count) return <span className="muted">미배분</span>;
+  const ok = r.alloc_count === r.tx_count && r.alloc_amount === r.total_amount;
+  return (
+    <span className={`badge ${ok ? 'badge-green' : 'badge-amber'}`} title={ok ? '건수·금액 일치' : '입력값과 배분 결과가 다릅니다'}>
+      {num(r.alloc_count)}건 · 카드 {num(r.alloc_cards)}장
+    </span>
+  );
+}
+
+/** 입력 줄 아래: 법인 카드 현황 + 1건 평균 */
+function LineInfo({ corp, line }) {
+  if (!corp) return null;
+  const cnt = Number(line.tx_count || 0);
+  const amt = Number(line.total_amount || 0);
+  if (!corp.active_card_count) return <div className="line-info warn">정상 카드 없음 · 배분 불가 (선불카드 관리에서 먼저 발급하세요)</div>;
+  const room = corp.charge_room < 0 ? '한도 무제한 카드 포함' : `충전 가능 ${won(corp.charge_room)}`;
+  const over = corp.charge_room >= 0 && amt > corp.charge_room;
+  return (
+    <div className={`line-info ${over ? 'warn' : ''}`}>
+      정상 카드 {num(corp.active_card_count)}장 · {room}
+      {cnt > 0 && amt > 0 && <> · 건당 평균 {won(Math.round(amt / cnt))}</>}
+      {over && ' · 한도 초과'}
+    </div>
+  );
+}
+
+/** 거래내역 1건의 카드 배분 내역 */
+function AllocationModal({ record, onClose }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const [view, setView] = useState('card');
+  useEffect(() => {
+    api.get(`/records/${record.id}/allocations`).then(setData).catch((e) => setError(e.message));
+  }, [record.id]);
+  const rows = data?.rows || [];
+  const sum = rows.reduce((s, t) => s + t.amount, 0);
+  const amounts = rows.map((t) => t.amount);
+  const ok = data && rows.length === record.tx_count && sum === record.total_amount;
+  return (
+    <Modal title={`카드 배분 내역 · ${record.record_date} ${record.corporation_name}`} width={860} onClose={onClose}
+      footer={<button className="btn" onClick={onClose}>닫기</button>}
+    >
+      {error && <div className="alert">{error}</div>}
+      <div className="stat-grid" style={{ marginBottom: 12 }}>
+        <StatCard label="입력" value={`${num(record.tx_count)}건`} sub={won(record.total_amount)} />
+        <StatCard label="배분 결과" value={`${num(rows.length)}건`} sub={won(sum)} tone={data ? (ok ? 'green' : 'amber') : undefined} />
+        <StatCard label="배분 카드" value={`${num(data?.cards.length || 0)}장`} />
+        <StatCard label="건당 평균" value={rows.length ? won(Math.round(sum / rows.length)) : '-'}
+          sub={rows.length ? `최소 ${won(Math.min(...amounts))} · 최대 ${won(Math.max(...amounts))}` : null} />
+      </div>
+      {data && !rows.length && <div className="alert alert-info">이 입력은 카드에 배분되지 않았습니다. (수정에서 &apos;자동 배분&apos;을 선택하면 배분됩니다)</div>}
+      {data && rows.length > 0 && !ok && <div className="alert">입력값과 배분 결과가 다릅니다.</div>}
+      {rows.length > 0 && (
+        <>
+          <div className="seg" style={{ marginBottom: 10 }}>
+            <button className={view === 'card' ? 'on' : ''} onClick={() => setView('card')}>카드별 합계</button>
+            <button className={view === 'tx' ? 'on' : ''} onClick={() => setView('tx')}>충전 거래 {num(rows.length)}건</button>
+          </div>
+          <div className="modal-section" style={{ marginTop: 0, borderTop: 0, paddingTop: 0 }}>
+            {view === 'card' ? (
+              <DataTable
+                rows={data.cards.map((c) => ({ ...c, id: c.card_id }))}
+                columns={[
+                  { key: 'card_no', label: '카드번호', filter: true, render: (c) => <span className="mono">{fmtCard(c.card_no)}</span> },
+                  { key: 'holder_name', label: '사용자', filter: true },
+                  { key: 'issuer_name', label: '선불사업자', render: (c) => c.issuer_name || '-' },
+                  { key: 'count', label: '충전 건수', align: 'right', render: (c) => `${num(c.count)}건` },
+                  { key: 'amount', label: '충전 금액', align: 'right', render: (c) => <strong>{won(c.amount)}</strong> },
+                ]}
+              />
+            ) : (
+              <DataTable
+                rows={rows}
+                columns={[
+                  { key: 'transacted_at', label: '일시', filter: true },
+                  { key: 'approval_no', label: '승인번호', render: (t) => <code>{t.approval_no}</code> },
+                  { key: 'card_no', label: '카드번호', filter: true, render: (t) => <span className="mono">{fmtCard(t.card_no)}</span> },
+                  { key: 'holder_name', label: '사용자', filter: true },
+                  { key: 'amount', label: '충전 금액', align: 'right', filter: true, render: (t) => won(t.amount) },
+                ]}
+              />
+            )}
+          </div>
+        </>
+      )}
     </Modal>
   );
 }

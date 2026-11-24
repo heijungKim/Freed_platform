@@ -177,6 +177,64 @@ test('카드 일괄 발급', async () => {
   assert.equal((await call('GET', `/cards?corporation_id=${corp.id}&size=1`)).body.total, before + 28);
 });
 
+test('거래내역 → 법인 카드 충전 자동 배분', async () => {
+  const issuer = (await call('GET', '/issuers/options')).body.find((i) => i.status === 'ACTIVE');
+  const corp = (await call('POST', '/corporations', { name: '배분테스트', biz_no: '555-55-55555', status: 'ACTIVE' })).body;
+  const empty = (await call('POST', '/corporations', { name: '카드없음', biz_no: '444-44-44444', status: 'ACTIVE' })).body;
+  // 카드 4장: 무제한 2, 한도 50만 2
+  await call('POST', '/cards/bulk', { issuer_id: issuer.id, corporation_id: corp.id, quantity: 2, holder_prefix: 'A' });
+  await call('POST', '/cards/bulk', { issuer_id: issuer.id, corporation_id: corp.id, quantity: 2, holder_prefix: 'B', limit_amount: 500000 });
+  const cardsBefore = (await call('GET', `/cards?corporation_id=${corp.id}`)).body;
+  assert.equal(cardsBefore.totalBalance, 0);
+
+  const r = await call('POST', '/records', { record_date: '2030-02-01', items: [{ corporation_id: corp.id, tx_count: 37, total_amount: '12,345,670' }] });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.allocated, 37);
+  assert.equal(r.body.allocated_amount, 12345670);
+  const recId = r.body.ids[0];
+
+  const al = (await call('GET', `/records/${recId}/allocations`)).body;
+  assert.equal(al.rows.length, 37);
+  assert.equal(al.rows.reduce((s, t) => s + t.amount, 0), 12345670);
+  assert.ok(new Set(al.rows.map((t) => t.amount)).size > 10, '금액이 다양해야 함');
+  assert.ok(al.rows.every((t) => t.transacted_at.startsWith('2030-02-01 ')));
+  assert.equal(al.cards.length, 4); // 모든 카드에 고르게
+  assert.equal(al.record.alloc_count, 37);
+  const cards = (await call('GET', `/cards?corporation_id=${corp.id}`)).body;
+  assert.equal(cards.totalBalance, 12345670);
+  assert.ok(cards.rows.filter((c) => c.limit_amount).every((c) => c.balance <= c.limit_amount), '한도 준수');
+
+  // 배분된 충전은 개별 취소 불가
+  assert.equal((await call('POST', `/transactions/${al.rows[0].id}/cancel`)).status, 400);
+
+  // 수정 → 기존 배분 취소 후 재배분
+  const upd = await call('PUT', `/records/${recId}`, { record_date: '2030-02-02', corporation_id: corp.id, tx_count: 5, total_amount: 1003 });
+  assert.equal(upd.status, 200);
+  assert.equal(upd.body.alloc_count, 5);
+  assert.equal(upd.body.alloc_amount, 1003);
+  assert.equal((await call('GET', `/cards?corporation_id=${corp.id}`)).body.totalBalance, 1003);
+
+  // 오류: 카드 없음 / 한도 부족 / 금액 < 건수 → 같이 입력한 다른 법인도 모두 취소
+  const before = (await call('GET', '/records?from=2030-02-01&to=2030-02-28')).body.total;
+  const noCards = await call('POST', '/records', { record_date: '2030-02-03', items: [
+    { corporation_id: corp.id, tx_count: 3, total_amount: 30000 }, { corporation_id: empty.id, tx_count: 1, total_amount: 1000 }] });
+  assert.equal(noCards.status, 400);
+  assert.match(noCards.body.error, /카드가 없어/);
+  assert.equal((await call('GET', '/records?from=2030-02-01&to=2030-02-28')).body.total, before);
+  assert.equal((await call('GET', `/cards?corporation_id=${corp.id}`)).body.totalBalance, 1003);
+  assert.equal((await call('POST', '/records', { record_date: '2030-02-03', items: [{ corporation_id: corp.id, tx_count: 5, total_amount: 3 }] })).status, 400);
+
+  // 배분 안 함
+  const na = await call('POST', '/records', { record_date: '2030-02-04', allocate: false, items: [{ corporation_id: empty.id, tx_count: 2, total_amount: 5000 }] });
+  assert.equal(na.status, 201);
+  assert.equal(na.body.allocated, 0);
+
+  // 삭제 → 배분 취소, 잔액 원복
+  const del = await call('DELETE', `/records/${recId}`);
+  assert.equal(del.body.cancelled, 5);
+  assert.equal((await call('GET', `/cards?corporation_id=${corp.id}`)).body.totalBalance, 0);
+});
+
 test('법인 사용 PG', async () => {
   const corp = (await call('GET', '/corporations?f_name=' + encodeURIComponent('테스트법인'))).body.rows[0];
   const pgs = (await call('GET', '/pgs/options')).body;

@@ -42,7 +42,12 @@ router.get('/', wrap((req, res) => {
 }));
 
 router.get('/options', (req, res) => {
-  res.json(db.prepare(`SELECT c.id, c.name, c.status, ${CARD_COUNT} AS card_count FROM corporations c ORDER BY c.name`).all());
+  res.json(db.prepare(`SELECT c.id, c.name, c.status, ${CARD_COUNT} AS card_count,
+    (SELECT COUNT(*) FROM cards WHERE corporation_id = c.id AND status = 'ACTIVE') AS active_card_count,
+    (SELECT CASE WHEN SUM(CASE WHEN limit_amount = 0 THEN 1 ELSE 0 END) > 0 THEN -1
+      ELSE COALESCE(SUM(MAX(limit_amount - balance, 0)), 0) END
+     FROM cards WHERE corporation_id = c.id AND status = 'ACTIVE') AS charge_room
+    FROM corporations c ORDER BY c.name`).all());
 });
 
 const getOne = (id) => db.prepare(`SELECT c.*, ${PG_NAMES} AS pg_names, ${PG_IDS} AS pg_ids FROM corporations c WHERE c.id = ?`).get(id);

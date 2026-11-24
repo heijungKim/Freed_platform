@@ -95,7 +95,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   status TEXT NOT NULL DEFAULT 'APPROVED' CHECK (status IN ('APPROVED','CANCELLED','FAILED')),
   memo TEXT,
   transacted_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
-  created_by INTEGER REFERENCES users(id)
+  created_by INTEGER REFERENCES users(id),
+  record_id INTEGER -- 거래내역(tx_records) 자동 배분으로 생성된 경우
 );
 CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(transacted_at);
 CREATE INDEX IF NOT EXISTS idx_tx_corp ON transactions(corporation_id);
@@ -134,6 +135,9 @@ export function migrate(db) {
   const cols = db.prepare('PRAGMA table_info(cards)').all().map((c) => c.name);
   if (!cols.includes('issuer_id')) db.exec('ALTER TABLE cards ADD COLUMN issuer_id INTEGER REFERENCES issuers(id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_cards_issuer ON cards(issuer_id)');
+  const txCols = db.prepare('PRAGMA table_info(transactions)').all().map((c) => c.name);
+  if (!txCols.includes('record_id')) db.exec('ALTER TABLE transactions ADD COLUMN record_id INTEGER');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_tx_record ON transactions(record_id)');
 
   const version = db.prepare('PRAGMA user_version').get().user_version;
   if (version < 1) {
