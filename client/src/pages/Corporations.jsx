@@ -183,6 +183,11 @@ function CorporationCards({ corporation }) {
             className="btn btn-sm"
             onClick={() => navigate(`/cards?corporation_id=${corporation.id}`)}
           >카드 관리에서 보기 →</button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => navigate(`/settlements?corporation_id=${corporation.id}`)}
+          >정산 내역 보기 →</button>
         </div>
       </div>
       {error && <div className="alert">{error}</div>}

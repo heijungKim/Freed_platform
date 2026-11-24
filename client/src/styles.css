@@ -408,3 +408,6 @@ input:disabled { background: var(--surface-2); color: var(--muted); }
 .neg-text { color: var(--red); }
 .filter-bar.flat { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; box-shadow: none; margin: 0; }
 .total-row-4 { grid-template-columns: 1fr auto auto auto; border-top: 0; border-bottom: 1px solid var(--border); }
+.corp-tab .cnt-warn { background: var(--red-soft); color: var(--red); }
+.corp-tab.on .cnt-warn { background: rgba(255,255,255,.25); color: #fff; }
+.corp-settle-stats { margin-bottom: 14px; }

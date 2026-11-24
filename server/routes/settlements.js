@@ -111,7 +111,7 @@ function summarize(rows) {
 /** 전날 거래 → 오늘 정산 요약 (기준일 지정 가능: date = 거래일) */
 router.get('/summary', wrap((req, res) => {
   const txDate = dateParam(req.query.date, '거래일') || addDays(todayStr(), -1);
-  const rows = settlementRows({ from: txDate, to: txDate });
+  const rows = settlementRows({ from: txDate, to: txDate, corporation_id: req.query.corporation_id });
   res.json({ tx_date: txDate, settle_date: addDays(txDate, 1), ...summarize(rows), rows });
 }));
 
@@ -185,7 +185,7 @@ router.post('/', wrap((req, res) => {
 router.post('/bulk', wrap((req, res) => {
   const date = dateParam(req.body?.tx_date, '거래일');
   if (!date) throw bad('거래일을 입력해 주세요.');
-  const targets = settlementRows({ from: date, to: date }).filter((r) => r.status === 'UNPAID' || r.status === 'SCHEDULED' || r.status === 'PARTIAL');
+  const targets = settlementRows({ from: date, to: date, corporation_id: req.body?.corporation_id }).filter((r) => r.status === 'UNPAID' || r.status === 'SCHEDULED' || r.status === 'PARTIAL');
   if (!targets.length) throw bad('정산할 대상이 없습니다.');
   const paidAt = nowStr();
   tx(() => {
@@ -198,6 +198,21 @@ router.post('/bulk', wrap((req, res) => {
     }
   });
   res.status(201).json({ count: targets.length, amount: targets.reduce((s, r) => s + r.tx_amount, 0) });
+}));
+
+/** 법인별 정산 현황 (기간 내 미정산 등) — 법인 선택 탭용 */
+router.get('/by-corporation', wrap((req, res) => {
+  const { from, to } = range(req.query);
+  const rows = settlementRows({ from, to });
+  const corps = db.prepare('SELECT id, name, status FROM corporations ORDER BY name').all();
+  res.json({
+    from, to,
+    rows: corps.map((c) => {
+      const list = rows.filter((r) => r.corporation_id === c.id);
+      return { corporation_id: c.id, corporation_name: c.name, status: c.status, ...summarize(list),
+        last_tx_date: list.reduce((m, r) => (r.tx_date > m ? r.tx_date : m), '') || null };
+    }),
+  });
 }));
 
 /** 정산 취소 */

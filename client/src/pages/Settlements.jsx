@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
-import { useOptions } from '../hooks.js';
 import { Badge, DataTable, FormModal, PageHeader, StatCard, useConfirm, useToast } from '../components/ui.jsx';
 import { LABELS, num, today, toDateStr, won } from '../format.js';
 
@@ -30,26 +30,33 @@ const PRESETS = [
 
 export default function Settlements() {
   const yesterday = shift(today(), -1);
+  const [params, setParams] = useSearchParams();
+  const corpId = params.get('corporation_id') || '';
+  const selectCorp = (id) => setParams(id ? { corporation_id: String(id) } : {}, { replace: true });
   const [baseDate, setBaseDate] = useState(yesterday); // 거래일 (정산일 = +1)
   const [day, setDay] = useState(null);
-  const [range, setRange] = useState({ from: shift(yesterday, -13), to: yesterday, corporation_id: '' });
+  const [period, setPeriod] = useState({ from: shift(yesterday, -13), to: yesterday });
+  const range = { ...period, corporation_id: corpId };
+  const setRange = (fn) => setPeriod((p) => { const n = fn({ ...p, corporation_id: corpId }); return { from: n.from, to: n.to }; });
+  const [corpTabs, setCorpTabs] = useState([]);
   const [view, setView] = useState('daily');
   const [daily, setDaily] = useState(null);
   const [detail, setDetail] = useState(null);
   const [error, setError] = useState('');
   const [settling, setSettling] = useState(null);
   const [version, setVersion] = useState(0);
-  const [corps] = useOptions('/corporations/options');
   const confirm = useConfirm();
   const toast = useToast();
 
   const loadDay = useCallback(() => {
-    api.get('/settlements/summary', { date: baseDate }).then(setDay).catch((e) => setError(e.message));
-  }, [baseDate]);
+    api.get('/settlements/summary', { date: baseDate, corporation_id: corpId }).then(setDay).catch((e) => setError(e.message));
+  }, [baseDate, corpId]);
   const loadRange = useCallback(() => {
-    api.get('/settlements/daily', range).then(setDaily).catch((e) => setError(e.message));
-    api.get('/settlements', range).then(setDetail).catch((e) => setError(e.message));
-  }, [range]);
+    const q = { ...period, corporation_id: corpId };
+    api.get('/settlements/daily', q).then(setDaily).catch((e) => setError(e.message));
+    api.get('/settlements', q).then(setDetail).catch((e) => setError(e.message));
+    api.get('/settlements/by-corporation', period).then((d) => setCorpTabs(d.rows)).catch(() => {});
+  }, [period, corpId]);
   useEffect(() => { loadDay(); }, [loadDay, version]);
   useEffect(() => { loadRange(); }, [loadRange, version]);
   const refresh = () => setVersion((v) => v + 1);
@@ -59,7 +66,7 @@ export default function Settlements() {
     const amount = targets.reduce((s, r) => s + r.tx_amount, 0);
     if (!(await confirm(`${baseDate} 거래 미정산 ${targets.length}개 법인을 거래 금액 전액으로 정산 처리할까요?\n정산 금액 합계: ${won(amount)}`, { okLabel: '일괄 정산' }))) return;
     try {
-      const r = await api.post('/settlements/bulk', { tx_date: baseDate });
+      const r = await api.post('/settlements/bulk', { tx_date: baseDate, corporation_id: corpId || undefined });
       toast(`${r.count}개 법인 ${won(r.amount)} 정산 처리되었습니다.`);
       refresh();
     } catch (e) { toast(e.message, 'error'); }
@@ -107,6 +114,9 @@ export default function Settlements() {
   ];
 
   const pendingCount = (day?.rows || []).filter((r) => ['UNPAID', 'SCHEDULED', 'PARTIAL'].includes(r.status)).length;
+  const selected = corpTabs.find((c) => String(c.corporation_id) === corpId);
+  const tabs = corpTabs.filter((c) => c.status === 'ACTIVE' || c.tx_amount > 0 || String(c.corporation_id) === corpId);
+  const allUnpaid = corpTabs.reduce((s, c) => s + c.unpaid_amount, 0);
   const isYesterday = baseDate === yesterday;
   const ds = daily?.summary || {};
 
@@ -119,11 +129,40 @@ export default function Settlements() {
       />
       {error && <div className="alert">{error}</div>}
 
+      <div className="corp-tabs" role="tablist" aria-label="법인 선택">
+        <button type="button" role="tab" aria-selected={!corpId} className={`corp-tab ${!corpId ? 'on' : ''}`} onClick={() => selectCorp('')}>
+          전체 법인 {allUnpaid > 0 && <span className="cnt cnt-warn" title="기간 내 미정산 금액">미정산 {won(allUnpaid)}</span>}
+        </button>
+        {tabs.map((c) => (
+          <button
+            key={c.corporation_id}
+            type="button"
+            role="tab"
+            aria-selected={String(c.corporation_id) === corpId}
+            className={`corp-tab ${String(c.corporation_id) === corpId ? 'on' : ''} ${c.status !== 'ACTIVE' ? 'inactive' : ''}`}
+            onClick={() => selectCorp(c.corporation_id)}
+            title={c.unpaid_amount ? `기간 내 미정산 ${won(c.unpaid_amount)}` : '기간 내 미정산 없음'}
+          >
+            {c.corporation_name}
+            {c.unpaid_amount > 0 ? <span className="cnt cnt-warn">미정산 {won(c.unpaid_amount)}</span> : <span className="cnt">✓</span>}
+          </button>
+        ))}
+      </div>
+
+      {selected && (
+        <div className="stat-grid corp-settle-stats">
+          <StatCard label={`${selected.corporation_name} · 기간 거래`} value={won(selected.tx_amount)} sub={`${period.from} ~ ${period.to} · ${num(selected.tx_count)}건`} tone="blue" />
+          <StatCard label="기간 정산 금액" value={won(selected.paid_amount)} tone="green" />
+          <StatCard label="기간 미정산 금액" value={won(selected.unpaid_amount)} tone={selected.unpaid_amount ? 'red' : undefined} />
+          <StatCard label="최근 거래일" value={selected.last_tx_date || '-'} sub={selected.last_tx_date ? `정산일 ${shift(selected.last_tx_date, 1)}` : null} />
+        </div>
+      )}
+
       {/* ---------- 전날 거래 정산 ---------- */}
       <div className="card settle-hero">
         <div className="card-head">
           <div className="settle-title">
-            <h2>{isYesterday ? '전날 거래 정산' : '거래일 정산'}</h2>
+            <h2>{selected ? `${selected.corporation_name} · ` : ''}{isYesterday ? '전날 거래 정산' : '거래일 정산'}</h2>
             <span className="muted">거래일 <b>{withWeek(baseDate)}</b> → 정산일 <b>{withWeek(shift(baseDate, 1))}</b></span>
           </div>
           <div className="day-nav">
@@ -141,16 +180,23 @@ export default function Settlements() {
             sub={<div className="share"><div className="share-bar"><span style={{ width: `${day?.tx_amount ? Math.min(100, (day.paid_amount / day.tx_amount) * 100) : 0}%` }} /></div></div>} />
         </div>
         <div className="settle-actions">
-          <span className="muted">{pendingCount ? `미정산 ${pendingCount}개 법인이 있습니다.` : day?.corporations ? '이 날 거래는 모두 정산되었습니다.' : '이 날 입력된 거래가 없습니다.'}</span>
+          <span className="muted">
+            {pendingCount ? `미정산 ${pendingCount}개 법인이 있습니다.` : day?.corporations ? '이 날 거래는 모두 정산되었습니다.' : '이 날 입력된 거래가 없습니다.'}
+            {selected?.last_tx_date && !day?.corporations && selected.last_tx_date !== baseDate && (
+              <button type="button" className="btn btn-sm" style={{ marginLeft: 8 }} onClick={() => setBaseDate(selected.last_tx_date)}>
+                최근 거래일({selected.last_tx_date})로 이동
+              </button>
+            )}
+          </span>
           <button className="btn btn-primary" disabled={!pendingCount} onClick={bulk}>미정산 {pendingCount}곳 일괄 정산</button>
         </div>
-        <DataTable rows={day?.rows || []} loading={!day} empty="이 날 입력된 거래가 없습니다." columns={corpColumns(false)} />
+        <DataTable rows={day?.rows || []} loading={!day} empty={selected ? `${selected.corporation_name}의 이 날 거래가 없습니다.` : '이 날 입력된 거래가 없습니다.'} columns={corpColumns(false)} />
       </div>
 
       {/* ---------- 기간별 정산 현황 ---------- */}
       <div className="card">
         <div className="card-head">
-          <h2>기간별 정산 현황</h2>
+          <h2>{selected ? `${selected.corporation_name} · ` : ''}기간별 정산 현황</h2>
           <div className="seg">
             <button className={view === 'daily' ? 'on' : ''} onClick={() => setView('daily')}>일자별</button>
             <button className={view === 'detail' ? 'on' : ''} onClick={() => setView('detail')}>법인별 상세</button>
@@ -167,10 +213,6 @@ export default function Settlements() {
             <span>~</span>
             <input type="date" value={range.to} min={range.from} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} />
           </div>
-          <select value={range.corporation_id} onChange={(e) => setRange((r) => ({ ...r, corporation_id: e.target.value }))}>
-            <option value="">전체 법인</option>
-            {corps.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
         </div>
         <div className="total-row total-row-4">
           <span>기간 합계</span>

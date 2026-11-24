@@ -331,6 +331,18 @@ test('정산 내역 (D+1)', async () => {
   assert.equal(sum.unpaid_amount, 0);
   assert.equal(sum.paid_amount, sum.tx_amount);
   assert.equal((await call('POST', '/settlements/bulk', { tx_date: '2031-05-10' })).status, 400);
+  // 법인 선택
+  const other = (await call('POST', '/corporations', { name: '정산법인B', biz_no: '222-22-22222', status: 'ACTIVE' })).body;
+  await call('POST', '/records', { record_date: '2031-05-10', allocate: false, items: [{ corporation_id: other.id, tx_count: 2, total_amount: 20000 }] });
+  const only = (await call('GET', `/settlements/summary?date=2031-05-10&corporation_id=${other.id}`)).body;
+  assert.equal(only.rows.length, 1);
+  assert.equal(only.unpaid_amount, 20000);
+  const byCorp = (await call('GET', '/settlements/by-corporation?from=2031-05-01&to=2031-05-31')).body.rows;
+  assert.equal(byCorp.find((r) => r.corporation_id === other.id).unpaid_amount, 20000);
+  assert.equal(byCorp.find((r) => r.corporation_id === corp.id).unpaid_amount, 0);
+  const bulkOne = await call('POST', '/settlements/bulk', { tx_date: '2031-05-10', corporation_id: other.id });
+  assert.equal(bulkOne.body.count, 1);
+  assert.equal((await call('GET', `/settlements/daily?from=2031-05-01&to=2031-05-31&corporation_id=${other.id}`)).body.rows[0].paid_amount, 20000);
   // 일자별
   const daily = (await call('GET', '/settlements/daily?from=2031-05-01&to=2031-05-31')).body;
   assert.equal(daily.rows[0].tx_date, '2031-05-10');
