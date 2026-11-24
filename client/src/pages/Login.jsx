@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { api } from '../api.js';
+import { api, IS_DEMO } from '../api.js';
 import { useAuth } from '../App.jsx';
 
 export default function Login() {
@@ -37,6 +37,14 @@ export default function Login() {
           </div>
         </div>
         <p className="muted login-desc">관리자 계정으로만 접속할 수 있습니다.</p>
+        {IS_DEMO && (
+          <div className="demo-note">
+            <strong>체험용 데모</strong>
+            <span>관리자 <code>admin</code> / <code>admin1234</code></span>
+            <span>일반 사용자 <code>user01</code> / <code>user12345</code> (로그인 거부 확인용)</span>
+            <small>데이터는 이 브라우저에만 저장됩니다.</small>
+          </div>
+        )}
         <label className="field">
           <span className="field-label">아이디</span>
           <input

@@ -1,23 +1,12 @@
 import crypto from 'node:crypto';
 import { db } from './db.js';
+import { hashPassword, verifyPassword } from './password.js';
+
+export { hashPassword, verifyPassword };
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 8; // 8시간
 export const COOKIE_NAME = 'erp_session';
 export const ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
-
-export function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
-  return `${salt}:${hash}`;
-}
-
-export function verifyPassword(password, stored) {
-  const [salt, hash] = String(stored).split(':');
-  if (!salt || !hash) return false;
-  const a = Buffer.from(hash, 'hex');
-  const b = crypto.scryptSync(password, salt, 64);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
 
 export function validatePassword(pw) {
   if (typeof pw !== 'string' || pw.length < 8) return '비밀번호는 8자 이상이어야 합니다.';

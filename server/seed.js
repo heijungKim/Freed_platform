@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import { pathToFileURL } from 'node:url';
 import { db, tx } from './db.js';
 import { hashPassword } from './auth.js';
 import { generateCardNo } from './routes/cards.js';
@@ -126,13 +125,4 @@ export function seedDemo() {
       .run(hashPassword('user12345'));
   });
   console.log('[seed] 데모 데이터 생성 완료');
-}
-
-// `npm run seed` 로 직접 실행 시: 모든 데이터 초기화 후 재생성
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (process.argv.includes('--reset')) {
-    db.exec('DELETE FROM transactions; DELETE FROM cards; DELETE FROM pgs; DELETE FROM corporations; DELETE FROM sessions; DELETE FROM users;');
-  }
-  ensureAdmin();
-  seedDemo();
 }

@@ -278,3 +278,13 @@ input:disabled { background: var(--surface-2); color: var(--muted); }
   .filter-actions .btn { flex: 1; }
   .topbar-title { display: none; }
 }
+
+/* ---------- Demo ---------- */
+.demo-note {
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--amber-soft); color: #6b4300; border-radius: 10px; padding: 10px 12px; font-size: 13px;
+}
+.demo-note code { background: rgba(255,255,255,.7); border-color: transparent; }
+.demo-note small { color: #8a5a00; }
+.demo-reset { background: none; border: 1px solid #2a3552; color: var(--sidebar-text); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12px; cursor: pointer; margin-top: 6px; }
+.demo-reset:hover { color: #fff; border-color: #4a5677; }

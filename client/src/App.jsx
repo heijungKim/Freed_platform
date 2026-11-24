@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { api, setUnauthorizedHandler } from './api.js';
-import { FeedbackProvider, FormModal, useToast } from './components/ui.jsx';
+import { api, IS_DEMO, setUnauthorizedHandler } from './api.js';
+import { FeedbackProvider, FormModal, useConfirm, useToast } from './components/ui.jsx';
 import { LABELS } from './format.js';
 import Login from './pages/Login.jsx';
 import Corporations from './pages/Corporations.jsx';
@@ -81,7 +81,10 @@ function Shell() {
             </NavLink>
           ))}
         </nav>
-        <div className="sidebar-foot muted">v1.0.0</div>
+        <div className="sidebar-foot muted">
+          <div>v1.0.0{IS_DEMO && ' · 체험용 데모'}</div>
+          {IS_DEMO && <DemoReset />}
+        </div>
       </aside>
       <div className="nav-scrim" onClick={() => setNavOpen(false)} />
       <div className="main">
@@ -126,5 +129,18 @@ function Shell() {
         />
       )}
     </div>
+  );
+}
+
+function DemoReset() {
+  const confirm = useConfirm();
+  return (
+    <button
+      className="demo-reset"
+      onClick={async () => {
+        if (!(await confirm('데모 데이터를 처음 상태로 되돌릴까요?\n이 브라우저에 저장된 변경 내용이 모두 삭제됩니다.', { danger: true, okLabel: '초기화' }))) return;
+        if (import.meta.env.MODE === 'demo') (await import('./demo/server.js')).resetDemo();
+      }}
+    >데모 데이터 초기화</button>
   );
 }

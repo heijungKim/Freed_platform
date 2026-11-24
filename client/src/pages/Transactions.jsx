@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, qs } from '../api.js';
+import { api } from '../api.js';
 import { useList, useOptions } from '../hooks.js';
 import { Badge, DataTable, FilterBar, FormModal, PageHeader, Pagination, StatCard, useConfirm, useToast } from '../components/ui.jsx';
 import { daysAgo, fmtCard, LABELS, today, won } from '../format.js';
@@ -50,8 +50,10 @@ export default function Transactions() {
     { key: 'status', label: '상태', render: (r) => <Badge value={r.status} kind="txStatus" /> },
   ];
 
-  const exportCsv = () => {
-    window.location.href = `/api/transactions/export.csv?${qs(list.applied)}`;
+  const exportCsv = async () => {
+    try {
+      await api.download('/transactions/export.csv', list.applied, 'transactions.csv');
+    } catch (e) { toast(e.message, 'error'); }
   };
 
   return (
